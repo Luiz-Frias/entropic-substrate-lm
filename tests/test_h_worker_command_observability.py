@@ -21,10 +21,12 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_execution import prepared
 from tests.test_sentence_worker_transport import _FlakyReadStore, _ReadFailure
 
+from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.kernel.runtime.logging import configure_logging
 from entropic_substrate.ladder.capture.adapters.jsonl import JsonlSink
 from entropic_substrate.ladder.capture.reader.h_telemetry import final_h_run_end
@@ -88,7 +90,7 @@ def test_successful_run_command_routes_committed_steps_through_a_jsonl_sink(
     # sealed evaluation report, so the training assertions filter on their
     # schema and the evaluation rows are asserted present, not tolerated.
     training = [r for r in records if r.get("schema") == "h-training-step-v2"]
-    evaluations = [r for r in records if r.get("schema") == "h-predictive-evaluation-v1"]
+    evaluations = [r for r in records if r.get("schema") == "h-predictive-evaluation-v2"]
     assert training, "no committed H training-step rows reached the sink"
     assert evaluations, "no sealed evaluation reports reached the sink"
     # RESTATED 2026-10-14 (FOR-1639): the worker also writes its two
@@ -255,7 +257,9 @@ def test_ok_run_writes_one_start_and_one_end_around_every_other_row(tmp_path: Pa
     request, objects, marker, root = _worker(tmp_path)
     sink = _ListSink()
 
-    run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+    run_object_worker(
+        objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink, latent_usage=POSTERIOR_MEAN
+    )
 
     assert [r["event"] for r in _lifecycle(sink)] == ["run_start", "run_end"]
     assert sink.records[0]["event"] == "run_start" and sink.records[-1]["event"] == "run_end"
@@ -271,7 +275,11 @@ def test_ok_run_writes_one_start_and_one_end_around_every_other_row(tmp_path: Pa
         "profile_identity": request.profile.identity,
         "run_class": request.profile.run_class,
         "runtime": persisted["runtime"],
+        # DH-51 (R1): the authenticated manifest rides run_start. RETRACTED 2026-11-04: this pin
+        # held exactly eight keys; the schema name is unchanged and absence is the old default.
+        "profile": request.profile.manifest,
     }
+    assert HProfile.from_manifest(start["profile"]).identity == start["profile_identity"]
     result = json.loads((root / "worker" / "result.json").read_text())
     assert end == {
         "schema": LIFECYCLE,
@@ -291,14 +299,23 @@ def test_paused_and_operator_stopped_results_are_ok_run_ends_with_their_own_resu
     terminal result, told apart from a complete run by result_status."""
     sink = _ListSink()
     _, objects, marker, root = _worker(tmp_path / "paused", pause=("prediction", 2))
-    run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+    run_object_worker(
+        objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink, latent_usage=POSTERIOR_MEAN
+    )
     (end,) = [r for r in _lifecycle(sink) if r["event"] == "run_end"]
     assert end["status"] == "ok" and end["result_status"] == "paused"
 
     stopped = _ListSink()
     request, objects, marker, root = _worker(tmp_path / "stopped")
     objects.seed(stop_marker_key(request), encode_stop_marker(request))
-    run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=stopped)
+    run_object_worker(
+        objects,
+        marker,
+        root,
+        max_request_bytes=MAX_REQUEST,
+        sink=stopped,
+        latent_usage=POSTERIOR_MEAN,
+    )
     (end,) = [r for r in _lifecycle(stopped) if r["event"] == "run_end"]
     assert end["status"] == "ok" and end["result_status"] == "stopped_by_operator"
     assert type(end["successful_optimizer_steps"]) is int
@@ -309,7 +326,14 @@ def test_training_failure_writes_exactly_one_failed_end_after_its_start(tmp_path
     sink = _ListSink()
 
     with pytest.raises(RuntimeError, match="checkpoint upload failure"):
-        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+        run_object_worker(
+            objects,
+            marker,
+            root,
+            max_request_bytes=MAX_REQUEST,
+            sink=sink,
+            latent_usage=POSTERIOR_MEAN,
+        )
 
     assert [r["event"] for r in _lifecycle(sink)] == ["run_start", "run_end"]
     end = sink.records[-1]
@@ -335,7 +359,14 @@ def test_final_snapshot_failure_is_one_failed_end_never_an_ok_one(tmp_path: Path
     sink = _ListSink()
 
     with pytest.raises(_ReadFailure):
-        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+        run_object_worker(
+            objects,
+            marker,
+            root,
+            max_request_bytes=MAX_REQUEST,
+            sink=sink,
+            latent_usage=POSTERIOR_MEAN,
+        )
 
     ends = [r for r in _lifecycle(sink) if r["event"] == "run_end"]
     assert len(ends) == 1
@@ -360,7 +391,14 @@ def test_failure_before_the_run_started_writes_neither_record(
     sink = _ListSink()
 
     with pytest.raises(RuntimeError, match="materialization failure"):
-        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+        run_object_worker(
+            objects,
+            marker,
+            root,
+            max_request_bytes=MAX_REQUEST,
+            sink=sink,
+            latent_usage=POSTERIOR_MEAN,
+        )
 
     assert sink.records == []
     assert f"{request.prefix}/failure.json" in objects.values
@@ -395,7 +433,14 @@ def test_a_failure_whose_evidence_delivery_also_fails_writes_one_failed_run_end(
     sink = _ListSink()
 
     with pytest.raises(ExceptionGroup):
-        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+        run_object_worker(
+            objects,
+            marker,
+            root,
+            max_request_bytes=MAX_REQUEST,
+            sink=sink,
+            latent_usage=POSTERIOR_MEAN,
+        )
 
     assert [r["event"] for r in _lifecycle(sink)] == ["run_start", "run_end"]
     assert sink.records[0]["event"] == "run_start"
@@ -438,7 +483,14 @@ def test_the_failed_run_end_clock_is_read_after_failure_custody(
     sink = _ListSink()
 
     with pytest.raises(ExceptionGroup):
-        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+        run_object_worker(
+            objects,
+            marker,
+            root,
+            max_request_bytes=MAX_REQUEST,
+            sink=sink,
+            latent_usage=POSTERIOR_MEAN,
+        )
 
     end = sink.records[-1]
     assert end["event"] == "run_end" and end["status"] == "failed"
@@ -472,7 +524,14 @@ def test_the_failed_run_end_clock_origin_is_the_execution_call_not_materializati
     sink = _ListSink()
 
     with pytest.raises(RuntimeError):
-        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+        run_object_worker(
+            objects,
+            marker,
+            root,
+            max_request_bytes=MAX_REQUEST,
+            sink=sink,
+            latent_usage=POSTERIOR_MEAN,
+        )
 
     end = sink.records[-1]
     assert end["event"] == "run_end" and end["status"] == "failed"
@@ -490,7 +549,14 @@ def test_a_failing_run_start_log_writes_no_run_end_and_surfaces_the_sink_error(
     sink = _ListSink(raise_on_event="run_start")
 
     with pytest.raises(OSError, match="injected sink failure on run_start"):
-        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+        run_object_worker(
+            objects,
+            marker,
+            root,
+            max_request_bytes=MAX_REQUEST,
+            sink=sink,
+            latent_usage=POSTERIOR_MEAN,
+        )
 
     assert sink.records == []
     assert f"{request.prefix}/failure.json" in objects.values
@@ -504,7 +570,14 @@ def test_a_sink_failure_on_the_failed_end_surfaces_beside_the_original_error(
     sink = _ListSink(raise_on_event="run_end")
 
     with pytest.raises(ExceptionGroup) as raised:
-        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+        run_object_worker(
+            objects,
+            marker,
+            root,
+            max_request_bytes=MAX_REQUEST,
+            sink=sink,
+            latent_usage=POSTERIOR_MEAN,
+        )
 
     kinds = sorted(type(e).__name__ for e in raised.value.exceptions)
     assert kinds == ["OSError", "RuntimeError"], kinds
@@ -523,7 +596,14 @@ def test_a_sink_failure_on_the_ok_end_propagates_without_a_failure_marker(
     sink = _ListSink(raise_on_event="run_end")
 
     with pytest.raises(OSError, match="injected sink failure on run_end"):
-        run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+        run_object_worker(
+            objects,
+            marker,
+            root,
+            max_request_bytes=MAX_REQUEST,
+            sink=sink,
+            latent_usage=POSTERIOR_MEAN,
+        )
 
     assert f"{request.prefix}/complete.json" in objects.values
     assert f"{request.prefix}/failure.json" not in objects.values
@@ -534,9 +614,18 @@ def test_the_sink_never_changes_the_r2_objects_the_worker_publishes(tmp_path: Pa
     """Characterization pin (GREEN before the change): with or without a sink the
     worker publishes the same keys in the same order."""
     request, plain, marker, root = _worker(tmp_path / "plain")
-    run_object_worker(plain, marker, root, max_request_bytes=MAX_REQUEST)
+    run_object_worker(
+        plain, marker, root, max_request_bytes=MAX_REQUEST, latent_usage=POSTERIOR_MEAN
+    )
     _, mirrored, marker, root = _worker(tmp_path / "mirrored")
-    run_object_worker(mirrored, marker, root, max_request_bytes=MAX_REQUEST, sink=_ListSink())
+    run_object_worker(
+        mirrored,
+        marker,
+        root,
+        max_request_bytes=MAX_REQUEST,
+        sink=_ListSink(),
+        latent_usage=POSTERIOR_MEAN,
+    )
 
     # Journal object names embed a per-run content hash (wall-clock fields), so
     # their order inside one snapshot is not stable run to run. Compare the
@@ -555,7 +644,14 @@ def test_the_worker_file_is_admissible_to_the_h_capture_predicate(tmp_path: Path
     _, objects, marker, root = _worker(tmp_path)
     metrics = tmp_path / "observability" / "metrics.jsonl"
 
-    run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=JsonlSink(metrics))
+    run_object_worker(
+        objects,
+        marker,
+        root,
+        max_request_bytes=MAX_REQUEST,
+        sink=JsonlSink(metrics),
+        latent_usage=POSTERIOR_MEAN,
+    )
 
     end = final_h_run_end(metrics)
     assert end["status"] == "ok" and end["result_status"] == "probe_workload_complete"
@@ -567,7 +663,12 @@ def test_a_failed_runs_file_stays_admissible_and_says_failed(tmp_path: Path) -> 
 
     with pytest.raises(RuntimeError):
         run_object_worker(
-            objects, marker, root, max_request_bytes=MAX_REQUEST, sink=JsonlSink(metrics)
+            objects,
+            marker,
+            root,
+            max_request_bytes=MAX_REQUEST,
+            sink=JsonlSink(metrics),
+            latent_usage=POSTERIOR_MEAN,
         )
 
     end = final_h_run_end(metrics)
@@ -615,7 +716,9 @@ def test_every_sealed_checkpoint_is_evidenced_on_the_run_by_its_snapshot_marker(
     request, objects, marker, root = _worker(tmp_path)
     sink = _OrderedSink(objects)
 
-    run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+    run_object_worker(
+        objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink, latent_usage=POSTERIOR_MEAN
+    )
 
     events = _checkpoint_events(objects, request.prefix)
     assert events, "the fast profile must seal at least one checkpoint"
@@ -643,7 +746,14 @@ def test_checkpoint_evidence_lands_in_the_authoritative_jsonl_and_leaves_it_admi
     _, objects, marker, root = _worker(tmp_path)
     metrics = tmp_path / "observability" / "metrics.jsonl"
 
-    run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=JsonlSink(metrics))
+    run_object_worker(
+        objects,
+        marker,
+        root,
+        max_request_bytes=MAX_REQUEST,
+        sink=JsonlSink(metrics),
+        latent_usage=POSTERIOR_MEAN,
+    )
 
     rows = [json.loads(line) for line in metrics.read_text().splitlines() if line]
     annotations = [r for r in rows if r.get("event") == "annotate"]
@@ -859,7 +969,9 @@ def test_checkpoint_evidence_reaches_the_mlflow_run_tags_through_the_real_adapte
     metrics = tmp_path / "observability" / "metrics.jsonl"
     sink = CompositeSink(JsonlSink(metrics), mlflow)
 
-    run_object_worker(objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink)
+    run_object_worker(
+        objects, marker, root, max_request_bytes=MAX_REQUEST, sink=sink, latent_usage=POSTERIOR_MEAN
+    )
     sink.finish()
 
     tags = client._runs[mlflow.run_id].data.tags

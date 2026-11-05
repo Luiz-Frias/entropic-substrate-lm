@@ -7,6 +7,7 @@ from pathlib import Path
 from shutil import copytree
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_span_state_collection import model
 
@@ -53,7 +54,9 @@ def prepared(root: Path, *, pause: tuple[str, int] | None = None) -> tuple[Probe
 def test_worker_runs_one_lineage_through_native_verification(tmp_path: Path) -> None:
     request, root = prepared(tmp_path)
     checkpoints = []
-    result = execute_probe_request(request, root, on_checkpoint=checkpoints.append)
+    result = execute_probe_request(
+        request, root, on_checkpoint=checkpoints.append, latent_usage=POSTERIOR_MEAN
+    )
     assert result["status"] == "probe_workload_complete"
     assert result["scientific_authority"] == "none"
     assert result["successful_optimizer_steps"] == 6
@@ -68,7 +71,7 @@ def test_worker_runs_one_lineage_through_native_verification(tmp_path: Path) -> 
 
 def test_worker_pause_stops_before_generation_or_diagnostics(tmp_path: Path) -> None:
     paused, root = prepared(tmp_path, pause=("prediction", 2))
-    result = execute_probe_request(paused, root)
+    result = execute_probe_request(paused, root, latent_usage=POSTERIOR_MEAN)
     assert result["status"] == "paused"
     assert result["successful_optimizer_steps"] == 4
     assert result["generation"] is None and result["capture"] is None
@@ -97,7 +100,7 @@ def test_worker_pause_stops_before_generation_or_diagnostics(tmp_path: Path) -> 
     destination = tmp_path / "resumed"
     destination.mkdir()
     materialize_probe_request(store, marker, destination, max_request_bytes=1_000_000)
-    completed = execute_probe_request(resumed, destination)
+    completed = execute_probe_request(resumed, destination, latent_usage=POSTERIOR_MEAN)
     assert completed["status"] == "probe_workload_complete"
     assert completed["successful_optimizer_steps"] == 6
     final = read_json(
@@ -114,7 +117,7 @@ def test_checkpoint_observer_failure_cannot_be_reported_complete(tmp_path: Path)
         raise RuntimeError("checkpoint transport unavailable")
 
     with pytest.raises(RuntimeError, match="transport unavailable"):
-        execute_probe_request(request, root, on_checkpoint=fail)
+        execute_probe_request(request, root, on_checkpoint=fail, latent_usage=POSTERIOR_MEAN)
     failure = json.loads(next((root / "run").glob("*-failure.json")).read_text())
     assert failure["status"] == "execution_defect"
     assert failure["error_type"] == failure["error_code"] == "RuntimeError"
@@ -125,5 +128,5 @@ def test_changed_materialized_request_never_starts_training(tmp_path: Path) -> N
     request, root = prepared(tmp_path)
     (root / "request.json").write_bytes(request.payload + b" ")
     with pytest.raises(ValueError, match="identity"):
-        execute_probe_request(request, root)
+        execute_probe_request(request, root, latent_usage=POSTERIOR_MEAN)
     assert not list((root / "run").iterdir())

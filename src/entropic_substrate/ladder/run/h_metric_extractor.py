@@ -1,5 +1,5 @@
 """H lane's :class:`MetricExtractor` -- projects committed ``h-training-step-v2``
-rows and sealed ``h-predictive-evaluation-v1`` reports into the scalar metrics
+rows and sealed ``h-predictive-evaluation-v1``/``-v2`` reports into the scalar metrics
 an MLflow mirror can carry, on one global optimizer-step axis (exit-gate lane,
 2026-09-26; see the class docstring for the measured motivation).
 
@@ -27,7 +27,23 @@ from entropic_substrate.ladder.run.worker_log_events import (
     project_worker_stage_record,
 )
 
-__all__ = ["HTrainingStepExtractor"]
+__all__ = [
+    "EVALUATION_SCHEMAS",
+    "LATENT_OPERANDS",
+    "PROPOSALS",
+    "HTrainingStepExtractor",
+    "project_evaluation",
+]
+
+# The evaluation schemas this mirror reads: the v1 report (the H0 captures) and the v2 report
+# (FOR-1704: prior and mixture proposals, diagnostics, latent usage). The analysis side keeps its
+# own literal tuple and never imports a checkpoint-reader member for these strings; a test pins
+# them equal to the writer's admitted set.
+EVALUATION_SCHEMAS = ("h-predictive-evaluation-v1", "h-predictive-evaluation-v2")
+# The closed proposal vocabulary of the v2 record and the closed latent-usage operand vocabulary,
+# each pinned equal to its writer-side Literal/StrEnum by tests/test_h_metric_extractor_l4d.py.
+PROPOSALS = ("q", "prior", "mixture")
+LATENT_OPERANDS = ("posterior_mean", "draw_average")
 
 # The h-training-step-v2 schema's own finite-or-None numeric fields
 # (execution.py:advance) -- see that module's docstring for the schema.
@@ -67,7 +83,7 @@ class HTrainingStepExtractor:
     without a ``phase`` cannot be placed on that axis and is refused (``None``),
     never guessed. ``phase_index`` (0/1) marks the transition.
 
-    Evaluation reports (``h-predictive-evaluation-v1``, always prediction-phase)
+    Evaluation reports (``h-predictive-evaluation-v1`` and ``-v2``, always prediction-phase)
     are projected as scalar summaries per importance sample count *k*:
     ``eval/log_marginal_k{k}`` (mean of the finite ``log_estimate`` rows),
     ``eval/ess_k{k}`` (mean finite effective sample size), ``eval/gap_rows_k{k}``
@@ -76,9 +92,19 @@ class HTrainingStepExtractor:
     finite row contributes only its gap count. The authoritative journal and the
     evaluation artifacts are untouched; this remains the additive mirror.
 
-    Keys are ALWAYS k-suffixed (FOR-1664): a bare ``eval/log_marginal`` or ``eval/ess``
-    is never emitted, because an estimate without its k reads as converged when it is
-    not. The k set is the profile's whole evaluated population: the importance-sample
+    FOR-1704 (L4d): a v2 report adds the prior and mixture proposals, per-proposal ratio of sums
+    (``sum(log_estimate) / sum(source_bytes)`` over the SAME finite rows; gap rows' bytes are
+    excluded and the key is absent, never 0, when no row is finite), log-weight spread, the
+    log-radius and cosine diagnostics, and signed latent usage. The q keys keep their bare names;
+    every other proposal's k-suffixed key carries the proposal segment before ``_k``. See
+    :func:`project_evaluation`.
+
+    Every k-DEPENDENT estimate key is k-suffixed (FOR-1664): a bare ``eval/log_marginal`` or
+    ``eval/ess`` is never emitted, because an estimate without its k reads as converged when it is
+    not. The k-free keys are per-evaluation quantities with no sample count:
+    ``eval/prior_log_radius_mean``, ``eval/q_log_radius_mean``, ``eval/prior_q_cosine_mean``,
+    ``eval/latent_usage_<operand>_nats_per_byte`` (FOR-1704) and ``eval/wall_seconds`` and
+    ``eval/cuda_seconds``. The k set is the profile's whole evaluated population: the importance-sample
     curve AND the fixed diagnostic count (``RunSchedule.evaluated_samples``), so the
     diagnostic rows arrive under their own k (for example ``eval/ess_k256``) exactly as
     the curve rows do. An effective sample size is bounded by its k, so the smoke
@@ -117,7 +143,7 @@ class HTrainingStepExtractor:
         schema = event.get("schema")
         if schema == "h-training-step-v2":
             return self._training(event)
-        if schema == "h-predictive-evaluation-v1":
+        if schema in EVALUATION_SCHEMAS:
             return self._evaluation(event)
         if schema == WORKER_STAGE_SCHEMA:
             return self._worker_stage(event)
@@ -160,44 +186,275 @@ class HTrainingStepExtractor:
 
     def _evaluation(self, event: dict[str, object]) -> ExtractedMetrics | None:
         step = event.get("step")
-        examples = event.get("examples")
-        if type(step) is not int or not isinstance(examples, list):
+        if type(step) is not int:
             return None
-        estimates: dict[str, list[float]] = {}
-        sizes: dict[str, list[float]] = {}
-        gaps: dict[str, int] = {}
-        for example in examples:
-            if not isinstance(example, dict):
-                return None
-            by_count = example.get("by_sample_count")
-            if not isinstance(by_count, dict):
-                return None
-            for count, rows in cast(dict[object, object], by_count).items():
-                key = str(count)
-                if not isinstance(rows, list):
-                    return None
-                for row in cast(list[object], rows):
-                    if not isinstance(row, dict):
-                        return None
-                    r = cast(dict[str, object], row)
-                    if r.get("gap") is not None:
-                        gaps[key] = gaps.get(key, 0) + 1
-                    estimate = _finite(r.get("log_estimate"))
-                    if estimate is not None:
-                        estimates.setdefault(key, []).append(estimate)
-                    size = _finite(r.get("effective_sample_size"))
-                    if size is not None:
-                        sizes.setdefault(key, []).append(size)
-                    gaps.setdefault(key, gaps.get(key, 0))
-        metrics: dict[str, float] = {}
-        for key in sorted(gaps, key=lambda k: (len(k), k)):
-            if key in estimates:
-                metrics[f"eval/log_marginal_k{key}"] = sum(estimates[key]) / len(estimates[key])
-            if key in sizes:
-                metrics[f"eval/ess_k{key}"] = sum(sizes[key]) / len(sizes[key])
-            metrics[f"eval/gap_rows_k{key}"] = float(gaps[key])
-        for field in ("wall_seconds", "cuda_seconds"):
-            value = _finite(event.get(field))
-            if value is not None:
-                metrics[f"eval/{field}"] = value
+        metrics = project_evaluation(event)
+        if metrics is None:
+            return None
         return ExtractedMetrics(step=step + self._warmup_steps, metrics=metrics)
+
+
+def _proposal_key(base: str, proposal: str, k: str) -> str:
+    """``eval/<base>_k<k>`` for q, ``eval/<base>_<proposal>_k<k>`` otherwise.
+
+    The q keys keep their bare names; the proposal segment sits immediately before ``_k`` so the
+    trailing ``_k<int>`` that ``h_aggregate._metric_order`` parses is unchanged. The flat metrics
+    dict keeps only the last writer of a name, so a shared name would overwrite q.
+    """
+    return f"eval/{base}_k{k}" if proposal == "q" else f"eval/{base}_{proposal}_k{k}"
+
+
+def _rows(by_count: object) -> dict[str, list[dict[str, object]]] | None:
+    """The importance rows of one proposal keyed by k, or ``None`` when malformed."""
+    if not isinstance(by_count, dict):
+        return None
+    out: dict[str, list[dict[str, object]]] = {}
+    for count, rows in cast(dict[object, object], by_count).items():
+        if not isinstance(rows, list):
+            return None
+        checked: list[dict[str, object]] = []
+        for row in cast(list[object], rows):
+            if not isinstance(row, dict):
+                return None
+            checked.append(cast(dict[str, object], row))
+        out[str(count)] = checked
+    return out
+
+
+def _row_count(by_count: dict[str, list[dict[str, object]]]) -> int | None:
+    """The one target-row count every k of the q proposal shares; ``None`` when they differ."""
+    sizes = {len(rows) for rows in by_count.values()}
+    return next(iter(sizes)) if len(sizes) == 1 else None
+
+
+def _bytes(value: object, rows: int) -> list[int] | None:
+    """Canonical source-byte counts aligned with ``rows``; ``None`` when unusable."""
+    # the in-memory report the runner mirrors carries tuples; a JSON round trip carries lists
+    if not isinstance(value, (list, tuple)) or len(cast(tuple[object, ...], value)) != rows:
+        return None
+    counts: list[int] = []
+    for n in cast(tuple[object, ...], value):
+        if type(n) is not int or n < 1:
+            return None
+        counts.append(n)
+    return counts
+
+
+class _Tally:
+    """Per-proposal accumulation of the importance rows, per k, over every example."""
+
+    def __init__(self) -> None:
+        self.estimates: dict[str, list[float]] = {}
+        self.sizes: dict[str, list[float]] = {}
+        self.gaps: dict[str, int] = {}
+        # ratio of sums: log_estimate and source_bytes summed over the SAME finite rows
+        self.numerator: dict[str, float] = {}
+        self.denominator: dict[str, int] = {}
+        self.ratio_available = True
+
+    def add(self, by_count: dict[str, list[dict[str, object]]], source_bytes: object) -> None:
+        for key, rows in by_count.items():
+            counts = _bytes(source_bytes, len(rows))
+            if counts is None:
+                self.ratio_available = False
+            for index, r in enumerate(rows):
+                if r.get("gap") is not None:
+                    self.gaps[key] = self.gaps.get(key, 0) + 1
+                estimate = _finite(r.get("log_estimate"))
+                if estimate is not None:
+                    self.estimates.setdefault(key, []).append(estimate)
+                    if counts is not None:
+                        self.numerator[key] = self.numerator.get(key, 0.0) + estimate
+                        self.denominator[key] = self.denominator.get(key, 0) + counts[index]
+                size = _finite(r.get("effective_sample_size"))
+                if size is not None:
+                    self.sizes.setdefault(key, []).append(size)
+                self.gaps.setdefault(key, self.gaps.get(key, 0))
+
+    def emit(self, proposal: str, metrics: dict[str, float]) -> None:
+        for key in sorted(self.gaps, key=lambda k: (len(k), k)):
+            if key in self.estimates:
+                metrics[_proposal_key("log_marginal", proposal, key)] = sum(
+                    self.estimates[key]
+                ) / len(self.estimates[key])
+            if key in self.sizes:
+                metrics[_proposal_key("ess", proposal, key)] = sum(self.sizes[key]) / len(
+                    self.sizes[key]
+                )
+            metrics[_proposal_key("gap_rows", proposal, key)] = float(self.gaps[key])
+            # Absent, never 0, when no row of THIS proposal is finite (or the bytes are unusable).
+            if self.ratio_available and self.denominator.get(key, 0) > 0:
+                metrics[_proposal_key("log_marginal_per_byte_ratio_of_sums", proposal, key)] = (
+                    self.numerator[key] / self.denominator[key]
+                )
+
+
+def _finite_list(value: object) -> list[float] | None:
+    if not isinstance(value, list):
+        return None
+    out: list[float] = []
+    for item in cast(list[object], value):
+        number = _finite(item)
+        if number is None:
+            return None
+        out.append(number)
+    return out
+
+
+def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
+    """The scalar metrics of one sealed evaluation report (v1 or v2); ``None`` when malformed.
+
+    This is the one projection both the MLflow/JSONL mirror and the worker's ``evaluation.end``
+    telemetry read, so no second formula exists in a reader member (FOR-1704, C11/C12). A key is
+    emitted if and only if its source fields are present in the record, so the schema version is
+    not the switch and nothing is invented: a v1 record carries no prior or mixture block and so
+    emits no such key. A MALFORMED v2 block (a proposal, diagnostics or latent-usage field that is
+    present but unusable) returns ``None`` for the whole record, never the q keys alone (A8c).
+    """
+    examples = event.get("examples")
+    if not isinstance(examples, list):
+        return None
+    tallies = {name: _Tally() for name in PROPOSALS}
+    seen: dict[str, int] = dict.fromkeys(PROPOSALS, 0)
+    prior_radius: list[float] = []
+    q_radius: list[float] = []
+    cosines: list[float] = []
+    radius_seen = [0, 0]
+    cosine_seen = 0
+    sd_values: dict[str, dict[str, list[float]]] = {name: {} for name in PROPOSALS}
+    sd_seen = 0
+    usage_gain = 0.0
+    usage_bytes = 0
+    usage_seen = 0
+    count = len(cast(list[object], examples))
+    for example in cast(list[object], examples):
+        if not isinstance(example, dict):
+            return None
+        ex = cast(dict[str, object], example)
+        q_rows = _rows(ex.get("by_sample_count"))
+        if q_rows is None:
+            return None
+        tallies["q"].add(q_rows, ex.get("source_bytes"))
+        seen["q"] += 1
+        # the population every other block of THIS example must cover (PR #435 review round 3):
+        # the same sample counts as q and the same number of target rows at each one
+        q_shape = {k: len(rows) for k, rows in q_rows.items()}
+        carried = {"q"}
+        proposals = ex.get("proposals")
+        if proposals is not None:
+            if not isinstance(proposals, dict):
+                return None
+            blocks = cast(dict[str, object], proposals)
+            if any(name not in ("prior", "mixture") for name in blocks):
+                return None
+            for name, block in blocks.items():
+                if not isinstance(block, dict):
+                    return None
+                block_rows = _rows(cast(dict[str, object], block).get("by_sample_count"))
+                if block_rows is None or cast(dict[str, object], block).get("proposal") != name:
+                    return None
+                if {k: len(rows) for k, rows in block_rows.items()} != q_shape:
+                    return None
+                carried.add(name)
+                tallies[name].add(block_rows, ex.get("source_bytes"))
+                seen[name] += 1
+        diagnostics = ex.get("diagnostics")
+        if diagnostics is not None:
+            if not isinstance(diagnostics, dict):
+                return None
+            d = cast(dict[str, object], diagnostics)
+            # every diagnostic array is one entry per target row (PR #435 review round 2): a
+            # list that lost an entry would otherwise put its mean over a shorter population
+            size = _row_count(q_rows)
+            if size is None:
+                return None
+            for index, field, bucket in (
+                (0, "prior_log_radius_mean", prior_radius),
+                (1, "q_log_radius_mean", q_radius),
+            ):
+                if d.get(field) is not None:
+                    values = _finite_list(d.get(field))
+                    if values is None or len(values) != size:
+                        return None
+                    bucket.extend(values)
+                    radius_seen[index] += 1
+            if d.get("prior_q_cosine") is not None:
+                values = _finite_list(d.get("prior_q_cosine"))
+                if values is None or len(values) != size:
+                    return None
+                cosines.extend(values)
+                cosine_seen += 1
+            spread = d.get("log_weight_sd")
+            if spread is not None:
+                if not isinstance(spread, dict):
+                    return None
+                # a spread for exactly the proposals this example carries, each at q's sample
+                # counts: a missing one would leave its key averaged over the other examples
+                if set(cast(dict[object, object], spread)) != carried:
+                    return None
+                for name, by_k in cast(dict[str, object], spread).items():
+                    if name not in PROPOSALS or not isinstance(by_k, dict):
+                        return None
+                    if {str(k) for k in cast(dict[object, object], by_k)} != set(q_shape):
+                        return None
+                    for k, sds in cast(dict[object, object], by_k).items():
+                        # a None entry stays (a zero-density row has no sd); the count does not
+                        if not isinstance(sds, list) or len(cast(list[object], sds)) != size:
+                            return None
+                        bucket_k = sd_values[name].setdefault(str(k), [])
+                        for item in cast(list[object], sds):
+                            if item is None:
+                                continue
+                            number = _finite(item)
+                            if number is None:
+                                return None
+                            bucket_k.append(number)
+                sd_seen += 1
+        usage = ex.get("latent_usage")
+        if usage is not None:
+            if not isinstance(usage, dict):
+                return None
+            u = cast(dict[str, object], usage)
+            q_lp = _finite_list(u.get("q_decoder_log_prob"))
+            null_lp = _finite_list(u.get("null_decoder_log_prob"))
+            counts = _bytes(ex.get("source_bytes"), len(q_lp) if q_lp is not None else -1)
+            if q_lp is None or null_lp is None or len(null_lp) != len(q_lp) or counts is None:
+                return None
+            # signed, never clamped: a negative sum is the measurement
+            usage_gain += sum(q - n for q, n in zip(q_lp, null_lp, strict=True))
+            usage_bytes += sum(counts)
+            usage_seen += 1
+    # a block present on some examples and not others is a malformed record, not a partial one
+    for name in ("prior", "mixture"):
+        if seen[name] not in (0, count):
+            return None
+    for flag in (*radius_seen, cosine_seen, sd_seen, usage_seen):
+        if flag not in (0, count):
+            return None
+    metrics: dict[str, float] = {}
+    for name in PROPOSALS:
+        if seen[name]:
+            tallies[name].emit(name, metrics)
+    if sd_seen:
+        for name in PROPOSALS:
+            for k in sorted(sd_values[name], key=lambda key: (len(key), key)):
+                if sd_values[name][k]:
+                    metrics[_proposal_key("log_weight_sd", name, k)] = sum(
+                        sd_values[name][k]
+                    ) / len(sd_values[name][k])
+    if radius_seen[0] and prior_radius:
+        metrics["eval/prior_log_radius_mean"] = sum(prior_radius) / len(prior_radius)
+    if radius_seen[1] and q_radius:
+        metrics["eval/q_log_radius_mean"] = sum(q_radius) / len(q_radius)
+    if cosines:
+        metrics["eval/prior_q_cosine_mean"] = sum(cosines) / len(cosines)
+    if usage_seen:
+        operand = event.get("latent_operand")
+        if operand not in LATENT_OPERANDS or usage_bytes <= 0:
+            return None
+        metrics[f"eval/latent_usage_{operand}_nats_per_byte"] = usage_gain / usage_bytes
+    for field in ("wall_seconds", "cuda_seconds"):
+        value = _finite(event.get(field))
+        if value is not None:
+            metrics[f"eval/{field}"] = value
+    return metrics

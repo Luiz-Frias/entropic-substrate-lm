@@ -99,7 +99,11 @@ type Verdict = Literal["PASS", "FAIL", "UNPROVEN"]
 _RESUMABLE_CAPTURES = ("pause_bytes_verified", "stop_bytes_verified")
 _CONTROLLER_SCHEMA = "h-probe-controller-result-v1"
 _LIFECYCLE_SCHEMA = "h-run-lifecycle-v1"
-_EVALUATION_SCHEMA = "h-predictive-evaluation-v1"
+# v1 is the H0 capture (read-old); v2 (FOR-1704) adds the prior and mixture proposals and leaves
+# the q rows at their v1 keys, so K6 reads the q curve of either unchanged. A literal tuple of its
+# own (the _GENERATION_SCHEMAS precedent below), pinned equal to the writer's admitted set by
+# tests/test_h_metric_extractor_l4d.py.
+_EVALUATION_SCHEMAS = ("h-predictive-evaluation-v1", "h-predictive-evaluation-v2")
 # The generation receipt schemas this check reads. v2 is the one in-tree v2 receipt reader
 # (the HEpP7g capture replays here, ruling D3); v3 (FOR-1674) adds ``continuations`` and
 # the sampling-law blocks. The check reads presence and shape only: it never re-derives a
@@ -725,9 +729,9 @@ def check_importance_curve(
         except TelemetryGap as gap:
             failures.append(str(gap))
             continue
-        evaluations = [row for row in rows if row.get("schema") == _EVALUATION_SCHEMA]
+        evaluations = [row for row in rows if row.get("schema") in _EVALUATION_SCHEMAS]
         if not evaluations:
-            failures.append(f"{path}: no {_EVALUATION_SCHEMA} rows")
+            failures.append(f"{path}: no {' or '.join(_EVALUATION_SCHEMAS)} rows")
         for row in evaluations:
             rows_seen += 1
             examples = row.get("examples")

@@ -2,7 +2,8 @@
 
 The E-series gate (:func:`~entropic_substrate.ladder.capture.reader.telemetry.final_eval_record`)
 asks for a final ``event == "eval"`` row; an H worker's stream carries
-``h-training-step-v2`` step rows, ``h-predictive-evaluation-v1`` reports and
+``h-training-step-v2`` step rows, ``h-predictive-evaluation-v1`` or ``-v2`` reports (FOR-1704;
+this module gates on neither schema, only on the lifecycle pair and a committed step row) and
 two ``h-run-lifecycle-v1`` records (``run_start`` / ``run_end``) and no
 ``eval`` event, so the E predicate refuses every H run. This module is the H
 counterpart, with the same posture: an inadmissible file raises

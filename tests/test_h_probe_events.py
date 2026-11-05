@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_execution import prepared
 
@@ -23,7 +24,9 @@ def _run_and_fetch_checkpoint_key(tmp_path: Path) -> tuple[_ObjectStore, ProbeRe
     marker = publish_probe_request(objects, request, inputs)
     root = tmp_path / "run-worker"
     root.mkdir()
-    run_object_worker(objects, marker, root, max_request_bytes=1_000_000)
+    run_object_worker(
+        objects, marker, root, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     key = f"{request.prefix}/checkpoint-00000002.json"
     assert key in objects.values
     return objects, request, key
@@ -148,7 +151,9 @@ def test_real_worker_events_share_one_lineage_and_remain_observations(
     marker = publish_probe_request(objects, request, inputs)
     root = tmp_path / "run-worker"
     root.mkdir()
-    run_object_worker(objects, marker, root, max_request_bytes=1_000_000)
+    run_object_worker(
+        objects, marker, root, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     for name, status in (
         ("started", "inputs_admitted"),
         ("checkpoint-00000002", "checkpoint"),

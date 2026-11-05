@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_h_codec_handoff import Pair, identity_of, make_pair, warmup_final
 from tests.test_h_pair_remote import CountingStore, collect, pair_world
@@ -420,17 +421,33 @@ def test_a_stopped_pair_resumes_and_the_host_verifies_the_handoff_its_resumed_li
     for pod in (observability_a, observability_b):
         assert (pod / "recipient" / "metrics.jsonl").is_file()
         assert (pod / "recipient" / "worker-log.jsonl").is_file()
-    # The REAL files cannot be stitched here: this tip's analysis loader refuses a pair cell's
-    # null future term (future_weight 0), which is FOR-1716 and out of this slice. The stitch
-    # reader's R2 contract is pinned on the synthetic lineage of tests/test_h_resumed_run_handoff.py
-    # with the SAME evidence type this verifier produces (one definition of its fields).
-    with pytest.raises(TelemetryGap, match="future_nll_per_dimension"):
-        load_h_resumed_run(
+    # FLIPPED 2026-11-04 (FOR-1716, DH-48 under DH-51). RETRACTED: the pin here said the REAL files
+    # cannot be stitched because the loader refused a pair cell's null future term
+    # (future_weight 0); it asserted a TelemetryGap on "future_nll_per_dimension". The pod
+    # lineage's run_start now carries the authenticated manifest, so the stitch loads through on
+    # BOTH admission paths the stitch uses: handoff= (pod A, the recipient's first pod) and
+    # warmup_steps= (pod B, the resumed pod).
+    stitched = load_h_resumed_run(
+        [
+            (
+                observability_a / "recipient" / "metrics.jsonl",
+                observability_a / "recipient" / "worker-log.jsonl",
+            ),
+            (
+                observability_b / "recipient" / "metrics.jsonl",
+                observability_b / "recipient" / "worker-log.jsonl",
+            ),
+        ],
+        handoff=proof,
+    )
+    assert [s.profile_identity for s in stitched.segments] == [pair.recipient.identity] * 2
+    prediction = [scalars for _, phase, scalars in stitched.run.training if phase == "prediction"]
+    assert prediction and all("future_nll_per_dimension" not in s for s in prediction)
+    stripped_a = _without_manifest(observability_a / "recipient", tmp_path / "stripped-a")
+    with pytest.raises(TelemetryGap) as refused:
+        load_h_resumed_run(  # the same lineage with pod A's manifest stripped keeps today's refusal
             [
-                (
-                    observability_a / "recipient" / "metrics.jsonl",
-                    observability_a / "recipient" / "worker-log.jsonl",
-                ),
+                stripped_a,
                 (
                     observability_b / "recipient" / "metrics.jsonl",
                     observability_b / "recipient" / "worker-log.jsonl",
@@ -438,6 +455,24 @@ def test_a_stopped_pair_resumes_and_the_host_verifies_the_handoff_its_resumed_li
             ],
             handoff=proof,
         )
+    # verbatim (S24): a regex search of a prefix would pass a message with a suffix appended
+    assert str(refused.value) == (
+        f"{stripped_a[0]}: step 1 (prediction) has a null future_nll_per_dimension"
+    )
+
+
+def _without_manifest(cell: Path, into: Path) -> tuple[Path, Path]:
+    """A copy of one cell's (metrics, log) whose ``run_start`` has no ``profile`` key."""
+    into.mkdir(parents=True)
+    rows = [json.loads(line) for line in (cell / "metrics.jsonl").read_text().splitlines() if line]
+    for row in rows:
+        if row.get("event") == "run_start":
+            del row["profile"]
+    metrics = into / "metrics.jsonl"
+    metrics.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    log = into / "worker-log.jsonl"
+    log.write_bytes((cell / "worker-log.jsonl").read_bytes())
+    return metrics, log
 
 
 # ------------------------------------------------------------------------ capture by reference
@@ -599,7 +634,9 @@ def test_a_v2_marker_on_a_single_profile_request_is_refused_by_name_and_v1_stays
     marker = publish_probe_request(objects, request, inputs)
     worker = tmp_path / "executed"
     worker.mkdir()
-    object_worker.run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    object_worker.run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     key = f"{request.prefix}/snapshots/complete.json"
     manifest = json.loads(objects.values[key])
     assert manifest["schema"] == "h-worker-snapshot-v1"  # a single profile still writes v1
@@ -1147,6 +1184,13 @@ def test_a_failed_handoff_is_stopped_before_the_handoff_and_opens_no_recipient_r
     workspace.mkdir()
     sinks = RemovingSinks(tmp_path / "obs", workspace)
     with pytest.raises(ValueError):
-        run_object_worker(objects, marker, workspace, max_request_bytes=MAX, cell_sinks=sinks)
+        run_object_worker(
+            objects,
+            marker,
+            workspace,
+            max_request_bytes=MAX,
+            cell_sinks=sinks,
+            latent_usage=POSTERIOR_MEAN,
+        )
     assert sinks.begun == ["donor"]
     assert sinks.tags == [("donor", "completed"), ("pair", "stopped_before_handoff")]

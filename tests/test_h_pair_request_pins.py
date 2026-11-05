@@ -28,6 +28,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_h_codec_handoff import Pair, make_pair
 from tests.test_h_pair_request import (
@@ -645,6 +646,7 @@ def test_a_pair_is_handed_cell_sinks_and_a_single_profile_request_is_not(
             workspace,
             max_request_bytes=1_000_000,
             sink=JsonlSink(tmp_path / "one-sink.jsonl"),
+            latent_usage=POSTERIOR_MEAN,
         ),
     )
     assert request.prefix in marker.key and not any(workspace.iterdir())  # refused before any work
@@ -664,6 +666,7 @@ def test_a_pair_is_handed_cell_sinks_and_a_single_profile_request_is_not(
             single_workspace,
             max_request_bytes=1_000_000,
             cell_sinks=cast(Any, object()),
+            latent_usage=POSTERIOR_MEAN,
         ),
     )
     assert not any(single_workspace.iterdir())
@@ -861,7 +864,14 @@ def test_a_failed_cells_run_is_finished_failed_through_the_pair_observer_end(
     sinks = Sinks()
     workspace = tmp_path / "ws"
     workspace.mkdir()
-    run_object_worker(objects, marker, workspace, max_request_bytes=1_000_000, cell_sinks=sinks)
+    run_object_worker(
+        objects,
+        marker,
+        workspace,
+        max_request_bytes=1_000_000,
+        cell_sinks=sinks,
+        latent_usage=POSTERIOR_MEAN,
+    )
     assert sinks.finished == [("donor", "FAILED")]
 
 
@@ -985,7 +995,9 @@ def test_a_failed_handoff_that_left_a_progress_receipt_is_refused_by_name(
     workspace = tmp_path / "ws"
     workspace.mkdir()
     with pytest.raises(ValueError, match="a failed hand-off left a progress receipt behind"):
-        run_object_worker(objects, marker, workspace, max_request_bytes=1_000_000)
+        run_object_worker(
+            objects, marker, workspace, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+        )
     assert failure_terminal(objects, request)["status"] == "execution_defect"
 
 

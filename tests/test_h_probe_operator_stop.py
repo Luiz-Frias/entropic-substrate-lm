@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_h_probe_controller import Guard, Provider
 from tests.test_h_probe_launch import launch
@@ -317,7 +318,9 @@ def test_marker_mid_prediction_phase_stops_at_the_next_boundary_not_at_completio
     marker_id = publish_probe_request(objects, request, root)
     worker = tmp_path / "worker-run"
     worker.mkdir()
-    terminal = run_object_worker(objects, marker_id, worker, max_request_bytes=1_000_000)
+    terminal = run_object_worker(
+        objects, marker_id, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     assert terminal.key == f"{request.prefix}/stopped.json"
     row = json.loads(objects.values[terminal.key])
     assert row["status"] == "stopped_by_operator"
@@ -373,7 +376,9 @@ def test_marker_mid_warmup_phase_stops_strictly_before_warmups_final_step(
     marker_id = publish_probe_request(objects, request, root)
     worker = tmp_path / "worker-run"
     worker.mkdir()
-    run_object_worker(objects, marker_id, worker, max_request_bytes=1_000_000)
+    run_object_worker(
+        objects, marker_id, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     row = json.loads(objects.values[f"{request.prefix}/stopped.json"])
     assert row["successful_optimizer_steps"] == 2
     receipt_key = next(
@@ -388,7 +393,9 @@ def test_marker_present_before_step_one_stops_after_sealing_step_one(tmp_path: P
     marker_id = publish_probe_request(objects, request, root)
     worker = tmp_path / "worker-run"
     worker.mkdir()
-    run_object_worker(objects, marker_id, worker, max_request_bytes=1_000_000)
+    run_object_worker(
+        objects, marker_id, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     row = json.loads(objects.values[f"{request.prefix}/stopped.json"])
     assert row["successful_optimizer_steps"] == 1
     assert objects.control_reads == 1
@@ -400,7 +407,9 @@ def test_marker_at_a_checkpoint_step_seals_once_not_twice(tmp_path: Path) -> Non
     marker_id = publish_probe_request(objects, request, root)
     worker = tmp_path / "worker-run"
     worker.mkdir()
-    run_object_worker(objects, marker_id, worker, max_request_bytes=1_000_000)
+    run_object_worker(
+        objects, marker_id, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     # `objects.values` is a dict: a key it holds can never count more than
     # once, so counting keys there cannot distinguish "sealed once" from
     # "sealed twice, second write collapsed the first". `objects.publishes`
@@ -426,7 +435,9 @@ def test_marker_for_another_request_is_ignored_run_completes(tmp_path: Path) -> 
     marker_id = publish_probe_request(objects, request, root)
     worker = tmp_path / "worker-run"
     worker.mkdir()
-    terminal = run_object_worker(objects, marker_id, worker, max_request_bytes=1_000_000)
+    terminal = run_object_worker(
+        objects, marker_id, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     assert terminal.key == f"{request.prefix}/complete.json"
     assert json.loads(objects.values[terminal.key])["status"] == "probe_workload_complete"
     assert f"{request.prefix}/stopped.json" not in objects.values
@@ -451,7 +462,9 @@ def test_unparseable_or_foreign_schema_marker_fails_loud_with_a_failure_snapshot
     worker = tmp_path / "worker-run"
     worker.mkdir()
     with pytest.raises(ValueError):  # json.JSONDecodeError is a ValueError
-        run_object_worker(objects, marker_id, worker, max_request_bytes=1_000_000)
+        run_object_worker(
+            objects, marker_id, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+        )
     failure = json.loads(objects.values[f"{request.prefix}/failure.json"])
     assert failure["status"] == "execution_defect"
     assert failure["snapshot"] is not None
@@ -466,7 +479,9 @@ def test_control_key_read_error_retries_then_fails_loud_after_the_budget(tmp_pat
     worker = tmp_path / "worker-run"
     worker.mkdir()
     with pytest.raises(RuntimeError, match="injected transient control-key read failure"):
-        run_object_worker(objects, marker_id, worker, max_request_bytes=1_000_000)
+        run_object_worker(
+            objects, marker_id, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+        )
     assert objects.control_reads == 3  # VerificationReadRetry().attempts, no numeric literal here
     failure = json.loads(objects.values[f"{request.prefix}/failure.json"])
     assert failure["status"] == "execution_defect" and failure["error_type"] == "RuntimeError"
@@ -479,7 +494,9 @@ def test_reads_of_the_control_key_equal_seal_boundaries_reached(tmp_path: Path) 
     marker_id = publish_probe_request(objects, request, root)
     worker = tmp_path / "worker-run"
     worker.mkdir()
-    run_object_worker(objects, marker_id, worker, max_request_bytes=1_000_000)
+    run_object_worker(
+        objects, marker_id, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     assert objects.control_reads == 3
 
 
@@ -497,7 +514,9 @@ def test_evaluation_report_is_present_in_the_snapshot_published_by_its_own_seal(
     marker_id = publish_probe_request(objects, request, root)
     worker = tmp_path / "worker-run"
     worker.mkdir()
-    run_object_worker(objects, marker_id, worker, max_request_bytes=1_000_000)
+    run_object_worker(
+        objects, marker_id, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     snapshot = json.loads(objects.values[f"{request.prefix}/snapshots/checkpoint-00000004.json"])
     paths = {entry["path"] for entry in snapshot["files"]}
     assert any(path.startswith("run/") and path.endswith("-evaluation.json") for path in paths)
@@ -514,7 +533,9 @@ def test_collection_of_a_stopped_terminal_has_workload_verified_false(tmp_path: 
     marker_id = publish_probe_request(objects, request, root)
     worker = tmp_path / "worker-run"
     worker.mkdir()
-    run_object_worker(objects, marker_id, worker, max_request_bytes=1_000_000)
+    run_object_worker(
+        objects, marker_id, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     destination = tmp_path / "collected"
     destination.mkdir()
     report = collect_probe_terminal(
@@ -663,7 +684,9 @@ def test_verb_publishes_the_marker_once_and_waits_for_the_stopped_event(
         # -- mirrors an operator's stop arriving mid-run.
         calls.append(seconds)
         if len(calls) == 1:
-            run_object_worker(objects, marker_id, worker, max_request_bytes=1_000_000)
+            run_object_worker(
+                objects, marker_id, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+            )
         clock[0] += seconds
 
     keys = request_stop(
@@ -850,7 +873,9 @@ def test_targeted_marker_present_from_the_start_skips_earlier_seals(tmp_path: Pa
     marker_id = publish_probe_request(objects, request, root)
     worker = tmp_path / "worker-run"
     worker.mkdir()
-    run_object_worker(objects, marker_id, worker, max_request_bytes=1_000_000)
+    run_object_worker(
+        objects, marker_id, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     row = json.loads(objects.values[f"{request.prefix}/stopped.json"])
     assert row["status"] == "stopped_by_operator"
     # warmup-2 seal was polled and passed; the stop landed at prediction-2.

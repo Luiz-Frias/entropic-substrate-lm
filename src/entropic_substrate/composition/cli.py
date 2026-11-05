@@ -9,6 +9,7 @@ from pathlib import Path
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.core.sentence.scoring import LatentUsageOperand, latent_usage_estimator
 from entropic_substrate.kernel.artifacts import (
     artifact_from_mapping,
     normalize_d1_artifact_directory,
@@ -204,6 +205,7 @@ def cmd_sentence(args: argparse.Namespace) -> int:
                     if pause is None
                     else lambda phase, step: (phase, step) == pause,
                     sink=sink,
+                    latent_usage=latent_usage_estimator(LatentUsageOperand.posterior_mean),
                 )
                 terminal_status = "FINISHED"
             finally:

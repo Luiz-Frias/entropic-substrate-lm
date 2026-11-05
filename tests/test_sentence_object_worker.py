@@ -5,6 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_execution import prepared
 from tests.test_sentence_worker_transport import _FlakyReadStore, _ReadFailure
@@ -26,7 +27,9 @@ def test_completion_marker_follows_verified_outputs_and_recovers_externally(tmp_
     marker = publish_probe_request(objects, request, inputs)
     worker = tmp_path / "object-worker"
     worker.mkdir()
-    terminal = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    terminal = run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     assert objects.publishes[-1] == f"{request.prefix}/complete.json"
     row = json.loads(objects.values[terminal.key])
     assert row["status"] == "probe_workload_complete"
@@ -57,7 +60,9 @@ def test_checkpoint_upload_failure_retains_failure_marker_not_completion(tmp_pat
     worker = tmp_path / "object-worker"
     worker.mkdir()
     with pytest.raises(RuntimeError, match="checkpoint upload failure"):
-        run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+        run_object_worker(
+            objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+        )
     assert f"{request.prefix}/complete.json" not in objects.values
     failure = json.loads(objects.values[f"{request.prefix}/failure.json"])
     assert failure["status"] == "execution_defect"
@@ -79,7 +84,9 @@ def test_missing_native_receipt_cannot_be_published_as_complete(
     worker = tmp_path / "object-worker"
     worker.mkdir()
     with pytest.raises(ValueError, match="native verification receipts"):
-        run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+        run_object_worker(
+            objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+        )
     assert f"{request.prefix}/complete.json" not in objects.values
     failure = json.loads(objects.values[f"{request.prefix}/failure.json"])
     assert failure["status"] == "execution_defect" and failure["error_type"] == "ValueError"
@@ -94,7 +101,9 @@ def test_snapshot_budget_failure_is_an_explicit_partial_terminal_result(tmp_path
     worker = tmp_path / "object-worker"
     worker.mkdir()
     with pytest.raises(ExceptionGroup, match="worker failure"):
-        run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+        run_object_worker(
+            objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+        )
     failure = json.loads(objects.values[f"{request.prefix}/failure.json"])
     assert failure["snapshot"] is None and failure["evidence_delivery"] == "failed"
     assert f"{request.prefix}/complete.json" not in objects.values
@@ -106,7 +115,9 @@ def test_paused_worker_publishes_recovery_not_completion(tmp_path: Path) -> None
     marker = publish_probe_request(objects, request, inputs)
     worker = tmp_path / "object-worker"
     worker.mkdir()
-    result = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    result = run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     assert result.key == f"{request.prefix}/paused.json"
     assert json.loads(objects.values[result.key])["status"] == "paused"
     assert f"{request.prefix}/complete.json" not in objects.values
@@ -145,7 +156,9 @@ def test_the_worker_always_writes_a_publication_block_on_the_complete_event(
     marker = publish_probe_request(objects, request, inputs)
     worker = tmp_path / "object-worker"
     worker.mkdir()
-    terminal = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    terminal = run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     publication = json.loads(objects.values[terminal.key])["publication"]
     _assert_well_shaped_publication(publication)
     assert publication["l1_seconds"] == 0.0
@@ -161,7 +174,9 @@ def test_the_worker_always_writes_a_publication_block_on_the_paused_event(tmp_pa
     marker = publish_probe_request(objects, request, inputs)
     worker = tmp_path / "object-worker"
     worker.mkdir()
-    result = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    result = run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     publication = json.loads(objects.values[result.key])["publication"]
     _assert_well_shaped_publication(publication)
 
@@ -179,7 +194,9 @@ def test_two_transient_reads_on_the_final_leg_publish_once_and_record_two_retrie
     marker = publish_probe_request(objects, request, inputs)
     worker = tmp_path / "object-worker"
     worker.mkdir()
-    terminal = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    terminal = run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     publication = json.loads(objects.values[terminal.key])["publication"]
     assert publication["retries"] == 2
     assert objects.publish_calls.count(fault_key) == 1
@@ -195,7 +212,9 @@ def test_three_transient_reads_on_the_final_leg_raise_the_original_class(tmp_pat
     worker = tmp_path / "object-worker"
     worker.mkdir()
     with pytest.raises(_ReadFailure):
-        run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+        run_object_worker(
+            objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+        )
     assert objects.publish_calls.count(fault_key) == 1
     assert f"{request.prefix}/complete.json" not in objects.values
     failure = json.loads(objects.values[f"{request.prefix}/failure.json"])

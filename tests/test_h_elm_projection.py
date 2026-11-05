@@ -33,6 +33,7 @@ from entropic_substrate.ladder.analyze.h_aggregate import aggregate_h_runs, load
 from entropic_substrate.ladder.analyze.h_elm_projection import (
     DENOMINATORS,
     HEADLINE_SAMPLES,
+    PROPOSALS,
     project_elm,
 )
 from entropic_substrate.ladder.analyze.h_report import h_report_from_run
@@ -151,6 +152,7 @@ class TestHeadline:
         assert elm["headline"] == {
             "ess_ratio_median": None,
             "log_marginal_per_byte": None,
+            "log_marginal_per_byte_ratio_of_sums": None,
             "present": False,
             "samples": 64,
         }
@@ -335,6 +337,121 @@ class TestOfflineSurface:
         assert str(a[0]) in str(excinfo.value)
 
 
+def _v2_event() -> dict[str, Any]:
+    """Two rows with UNEQUAL canonical bytes (2 and 198), one k, three proposals.
+
+    q: estimates -4, -396 -> mean of ratios (-2 + -2) / 2 = -2; ratio of sums -400 / 200 = -2.
+    Chosen so the two readings differ for the prior: estimates -4, -99 -> mean of ratios
+    (-2 + -0.5) / 2 = -1.25, ratio of sums -103 / 200 = -0.515.
+    """
+    gap_mixture = {"2": [_GAP_ROW, _row(-10.0, 1.5)]}
+    return {
+        "schema": "h-predictive-evaluation-v2",
+        "step": 4,
+        "examples": [
+            {
+                "boundary_symbols": [1, 1],
+                "source_bytes": [2, 198],
+                "by_sample_count": {"2": [_row(-4.0, 1.5), _row(-396.0, 1.2)]},
+                "proposals": {
+                    "prior": {
+                        "proposal": "prior",
+                        "by_sample_count": {"2": [_row(-4.0, 2.0), _row(-99.0, 2.0)]},
+                    },
+                    "mixture": {"proposal": "mixture", "by_sample_count": gap_mixture},
+                },
+            }
+        ],
+    }
+
+
+@pytest.mark.unit
+class TestProposalsAndRatioOfSums:
+    """FOR-1704: the ratio of sums beside the mean of ratios, and the proposal selector."""
+
+    def test_ratio_of_sums_and_mean_of_ratios_differ_on_unequal_bytes(self) -> None:
+        elm = project_elm(_v2_event(), proposal="prior")
+        block = elm["samples"]["2"]
+        assert block["mean_log_marginal_per_byte"] == pytest.approx(-1.25)
+        assert block["log_marginal_per_byte_ratio_of_sums"] == pytest.approx(-103 / 200)
+        assert elm["metrics"]["eval/log_marginal_per_byte_ratio_of_sums_prior_k2"] == (
+            pytest.approx(-103 / 200)
+        )
+        assert elm["metrics"]["eval/log_marginal_per_byte_prior_k2"] == pytest.approx(-1.25)
+
+    def test_the_default_selector_is_q_and_keeps_every_old_key_unprefixed(self) -> None:
+        default = project_elm(_v2_event())
+        explicit = project_elm(_v2_event(), proposal="q")
+        assert default == explicit and default["proposal"] == "q"
+        assert default["metrics"]["eval/log_marginal_per_byte_k2"] == pytest.approx(-2.0)
+        assert default["metrics"]["eval/log_marginal_per_byte_ratio_of_sums_k2"] == (
+            pytest.approx(-2.0)
+        )
+        assert not any("prior" in key or "mixture" in key for key in default["metrics"])
+
+    def test_every_non_q_flat_key_carries_the_proposal_segment(self) -> None:
+        for proposal in ("prior", "mixture"):
+            metrics = project_elm(_v2_event(), proposal=proposal)["metrics"]
+            assert metrics, proposal
+            assert all(key.endswith("_k2") and f"_{proposal}_k2" in key for key in metrics), metrics
+
+    def test_a_gap_row_is_in_neither_sum_and_the_gap_is_reported_beside(self) -> None:
+        elm = project_elm(_v2_event(), proposal="mixture")
+        block = elm["samples"]["2"]
+        # only the 198-byte row is finite: -10 / 198, NOT -10 / 200
+        assert block["log_marginal_per_byte_ratio_of_sums"] == pytest.approx(-10 / 198)
+        assert block["gap_rows"] == 1 and block["finite_rows"] == 1
+
+    def test_the_ratio_is_absent_never_zero_when_no_row_is_finite(self) -> None:
+        event = _v2_event()
+        event["examples"][0]["proposals"]["prior"]["by_sample_count"] = {"2": [_GAP_ROW, _GAP_ROW]}
+        elm = project_elm(event, proposal="prior")
+        assert elm["samples"]["2"]["log_marginal_per_byte_ratio_of_sums"] is None
+        assert elm["samples"]["2"]["gap_rows"] == 2
+        assert "eval/log_marginal_per_byte_ratio_of_sums_prior_k2" not in elm["metrics"]
+
+    def test_the_denominator_parameter_applies_to_the_ratio_of_sums(self) -> None:
+        elm = project_elm(_v2_event(), proposal="prior", denominator="source_bytes_plus_boundary")
+        assert elm["samples"]["2"]["log_marginal_per_byte_ratio_of_sums"] == pytest.approx(
+            -103 / 202
+        )
+
+    @pytest.mark.parametrize("proposal", ["prior", "mixture"])
+    def test_a_selected_proposal_the_record_never_evaluated_is_refused_by_name(
+        self, proposal: str
+    ) -> None:
+        """A9: a v1 record has no prior block; an empty projection would read as collapse."""
+        v1 = _event() | {"schema": "h-predictive-evaluation-v1"}
+        with pytest.raises(TelemetryGap, match=rf"{proposal}.*h-predictive-evaluation-v1"):
+            project_elm(v1, proposal=proposal)  # type: ignore[arg-type]
+
+    def test_an_unknown_proposal_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="proposal"):
+            project_elm(_event(), proposal="posterior")  # type: ignore[arg-type]
+
+    def test_the_vocabulary_is_the_closed_set(self) -> None:
+        assert PROPOSALS == ("q", "prior", "mixture")
+
+    def test_the_q_ratio_of_sums_equals_the_extractors_on_the_same_record(self) -> None:
+        """C11: one arithmetic per instrument, pinned across the two modules."""
+        from tests import evaluation_v2_fixtures as fx
+
+        from entropic_substrate.ladder.run.h_metric_extractor import project_evaluation
+
+        event = _v2_event()
+        for proposal in PROPOSALS:
+            elm = project_elm(event, proposal=proposal)["metrics"]  # type: ignore[arg-type]
+            flat = project_evaluation(event)
+            assert flat is not None
+            key = (
+                "eval/log_marginal_per_byte_ratio_of_sums_k2"
+                if proposal == "q"
+                else f"eval/log_marginal_per_byte_ratio_of_sums_{proposal}_k2"
+            )
+            assert elm[key] == pytest.approx(flat[key]), proposal
+        assert fx.PROPOSALS == PROPOSALS
+
+
 @pytest.mark.unit
 class TestModuleContract:
     def test_pure_no_print_no_composition_no_private_cross_import(self) -> None:
@@ -412,6 +529,28 @@ class TestFinalProbeCapture:
         assert per_sentence == pytest.approx(
             sum(r["log_estimate"] for r in example["by_sample_count"]["8"]) / 4
         )
+
+    def test_the_ratio_of_sums_is_the_raw_sum_over_the_raw_bytes_on_the_v1_capture(self) -> None:
+        """L4d read-old: the H0 capture is v1, so only the q-derivable ratio key appears (additive)
+        and it is the plain sum of the captured log estimates over the captured source bytes."""
+        metrics, worker_log = _final_probe_pairs()["sphere"]
+        run = load_h_run(metrics, worker_log)
+        rows = [
+            json.loads(line)
+            for line in metrics.read_text().splitlines()
+            if '"h-predictive-evaluation-v1"' in line
+        ]
+        example = rows[0]["examples"][0]
+        expected = sum(r["log_estimate"] for r in example["by_sample_count"]["8"]) / sum(
+            example["source_bytes"]
+        )
+        assert run.elm[0][1]["samples"]["8"]["log_marginal_per_byte_ratio_of_sums"] == (
+            pytest.approx(expected)
+        )
+        assert run.evaluations[0][1]["eval/log_marginal_per_byte_ratio_of_sums_k8"] == (
+            pytest.approx(expected)
+        )
+        assert not any("prior" in key or "mixture" in key for key in run.evaluations[0][1])
 
     def test_the_aggregate_over_both_arms_reports_no_headline(self) -> None:
         pairs = _final_probe_pairs()

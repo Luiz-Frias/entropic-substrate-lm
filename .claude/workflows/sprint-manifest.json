@@ -300,8 +300,8 @@
         }
       ],
       "parallel_group": null,
-      "status": "queued",
-      "notes": "trace_capture.py is a reader member (checkpoint.py:117) and is MISSING from the FOR-1692 member list. Its closed _SCHEMAS set (:23-37) refuses unknown schemas at :89. This slice must add h-codec-handoff-v1 and h-codec-handoff-seal-v1, or a pair lineage cannot be captured until L4c lands. The member set goes from 53 to 54, counted by AST over checkpoint.py:72-126. The issue's 'main's tuple has 51' is stale. Retract the 51/52 wording in read-old-table.md:260 and in the docstrings at tests/test_identity_epoch.py:183,:186,:218,:240 in the same conductor commit (house rule 4). Per the FOR-1692 text, codec_handoff must never import h_preservation; that keeps the member identity closed (grouping lens D4). liveRequired is true because the slice edits the run path. Base: main after W1 merges (decision Q6)."
+      "status": "done",
+      "notes": "trace_capture.py is a reader member (checkpoint.py:117) and is MISSING from the FOR-1692 member list. Its closed _SCHEMAS set (:23-37) refuses unknown schemas at :89. This slice must add h-codec-handoff-v1 and h-codec-handoff-seal-v1, or a pair lineage cannot be captured until L4c lands. The member set goes from 53 to 54, counted by AST over checkpoint.py:72-126. The issue's 'main's tuple has 51' is stale. Retract the 51/52 wording in read-old-table.md:260 and in the docstrings at tests/test_identity_epoch.py:183,:186,:218,:240 in the same conductor commit (house rule 4). Per the FOR-1692 text, codec_handoff must never import h_preservation; that keeps the member identity closed (grouping lens D4). liveRequired is true because the slice edits the run path. Base: main after W1 merges (decision Q6). MERGED 2026-11-04 (merge commit 443056c1, released v0.12.0/v0.12.1)."
     },
     {
       "id": "h1-l4b-pair-admission",
@@ -444,8 +444,8 @@
         }
       ],
       "parallel_group": null,
-      "status": "queued",
-      "notes": "The wire name v2 is TAKEN: worker_request.py:33-34 defines REQUEST_SCHEMA_V2 = 'h-probe-worker-request-v2', which is v1 plus a sealed authority (#407). The contract name worker-request-pair-v3 assumes decision Q7(a). Verify-and-close at lane start: checkpoint tuple += run_authority is already done (checkpoint.py:66-71, 53 members); tiny=True is stale, because worker_command.py:221 reads tiny=request.authority is None; pilot without authority is already refused (worker_request.py:78-79; tests/test_h_run_admission.py:104-127). worker_snapshot._path (:36-48) is moved INTO this slice so one slice owns the whole flat-namespace change (grouping lens D7; decision Q9). The non-member progress readers h_probe_collection.py and h_probe_resume.py land in the SAME DG-A commit as runner.py (grouping lens D5). D13 failure isolation is an operator ruling at the design gate (plan:146-148)."
+      "status": "done",
+      "notes": "The wire name v2 is TAKEN: worker_request.py:33-34 defines REQUEST_SCHEMA_V2 = 'h-probe-worker-request-v2', which is v1 plus a sealed authority (#407). The contract name worker-request-pair-v3 assumes decision Q7(a). Verify-and-close at lane start: checkpoint tuple += run_authority is already done (checkpoint.py:66-71, 53 members); tiny=True is stale, because worker_command.py:221 reads tiny=request.authority is None; pilot without authority is already refused (worker_request.py:78-79; tests/test_h_run_admission.py:104-127). worker_snapshot._path (:36-48) is moved INTO this slice so one slice owns the whole flat-namespace change (grouping lens D7; decision Q9). The non-member progress readers h_probe_collection.py and h_probe_resume.py land in the SAME DG-A commit as runner.py (grouping lens D5). D13 failure isolation is an operator ruling at the design gate (plan:146-148). MERGED 2026-11-04 (merge commit cd7429c1, released v0.12.0/v0.12.1)."
     },
     {
       "id": "h1-l4c-remote-pair",
@@ -574,8 +574,8 @@
         }
       ],
       "parallel_group": null,
-      "status": "queued",
-      "notes": "Done on trunk, so verify-and-close: the D8 pod-name rule (h_probe_launch.py:329-333; listing filter h_runpod_transport.py:259) and the existing LAUNCH_SCHEMA_V4 'h-probe-launch-v4' (h_probe_launch.py:68). Hence the contract name probe-launch-v5 under decision Q8(a). Two members missing from the issue list are added: worker_execution.py (result-v1 writer :225) and worker_command.py (:224). Also added is the non-member d1_trainer_s3_object_adapter.py, which does a single PUT (publish at :268, no multipart) and is not in checkpoint.py _READER_MODULES. h_wave_monitor is owned HERE, not by FOR-1695 (grouping lens D8; W3 frozen-file rule plan:97-100). New publication counts live only in completion v2 (decision Q11). Controller, watchdog and h_probe_process stay OUT unless the operator rules decision Q10(b); the issue says 'any controller or watchdog change' is out of scope. docs/deploy-h100.md: this phase edits only the LAUNCH SCHEMA section (:168-200); L9 owns the pin paragraph. DH-44 (2026-11-01, pull-forward): worker-result-v2, host-completion-v2 and stop-marker-cell are L4b's doors; L4c consumes them and keeps launch v5, the pod name, capture-by-reference, pair collection and resume, the wave-monitor cell arms and the deploy-doc launch schema."
+      "status": "done",
+      "notes": "Done on trunk, so verify-and-close: the D8 pod-name rule (h_probe_launch.py:329-333; listing filter h_runpod_transport.py:259) and the existing LAUNCH_SCHEMA_V4 'h-probe-launch-v4' (h_probe_launch.py:68). Hence the contract name probe-launch-v5 under decision Q8(a). Two members missing from the issue list are added: worker_execution.py (result-v1 writer :225) and worker_command.py (:224). Also added is the non-member d1_trainer_s3_object_adapter.py, which does a single PUT (publish at :268, no multipart) and is not in checkpoint.py _READER_MODULES. h_wave_monitor is owned HERE, not by FOR-1695 (grouping lens D8; W3 frozen-file rule plan:97-100). New publication counts live only in completion v2 (decision Q11). Controller, watchdog and h_probe_process stay OUT unless the operator rules decision Q10(b); the issue says 'any controller or watchdog change' is out of scope. docs/deploy-h100.md: this phase edits only the LAUNCH SCHEMA section (:168-200); L9 owns the pin paragraph. DH-44 (2026-11-01, pull-forward): worker-result-v2, host-completion-v2 and stop-marker-cell are L4b's doors; L4c consumes them and keeps launch v5, the pod name, capture-by-reference, pair collection and resume, the wave-monitor cell arms and the deploy-doc launch schema. MERGED 2026-11-04 (merge commit 3760679d, released v0.12.0/v0.12.1)."
     },
     {
       "id": "h1-l4d-evaluation-instruments",
@@ -585,7 +585,7 @@
         "FOR-1716"
       ],
       "branch": "h1-l4d-evaluation-instruments",
-      "parent": "h1-l4c-remote-pair",
+      "parent": "main",
       "mode": "ratchet",
       "engine_mode": "arch",
       "gates": {
@@ -595,9 +595,13 @@
       "model_tier": "Opus xhigh (design gate and implementer); DG-A conductor commits for members",
       "contracts_owned": [
         {
-          "name": "h-evaluation-record-proposals-v2",
+          "name": "h-predictive-evaluation-v2",
           "kind": "door",
           "frozen_after": true
+        },
+        {
+          "name": "h-run-lifecycle-v1:run_start.profile",
+          "kind": "contract"
         },
         {
           "name": "eval-metric-keys-prior-mixture-latent-usage",
@@ -622,7 +626,6 @@
         "src/entropic_substrate/ladder/run/trace_capture.py",
         "src/entropic_substrate/ladder/run/h_metric_extractor.py",
         "src/entropic_substrate/ladder/analyze/h_elm_projection.py",
-        "src/entropic_substrate/ladder/capture/adapters/mlflow.py",
         "tests/test_sentence_scoring.py",
         "tests/test_h_elm_projection.py",
         "tests/test_mlflow_async_sink.py",
@@ -630,30 +633,21 @@
         "docs/identity/read-old-table.md",
         "tests/test_h_metric_routing.py",
         "src/entropic_substrate/ladder/analyze/h_aggregate.py",
-        "tests/test_h_pair_request.py"
+        "tests/test_h_pair_request.py",
+        "src/entropic_substrate/ladder/run/evaluation_records.py",
+        "src/entropic_substrate/ladder/run/runner.py",
+        "src/entropic_substrate/ladder/run/object_worker.py",
+        "src/entropic_substrate/ladder/run/worker_command.py",
+        "src/entropic_substrate/ladder/run/worker_execution.py",
+        "src/entropic_substrate/composition/cli.py",
+        "src/entropic_substrate/composition/wiring/h_tiny_tracer.py",
+        "src/entropic_substrate/ladder/analyze/h_final_probe_checks.py",
+        "src/entropic_substrate/ladder/capture/reader/h_telemetry.py",
+        "src/entropic_substrate/ladder/run/worker_log_events.py"
       ],
-      "conflict_edges": [
-        {
-          "with": "h1-l4c-remote-pair",
-          "type": "file",
-          "evidence": "tests/test_identity_epoch.py, docs/identity/read-old-table.md",
-          "resolution": "serial-after"
-        },
-        {
-          "with": "h1-l4b-pair-admission",
-          "type": "contract",
-          "evidence": "consumes worker-cell-namespace and training-progress-v2 (per-cell MLflow runs carry the new keys)",
-          "resolution": "rails-before"
-        },
-        {
-          "with": "h1-l4a-codec-handoff",
-          "type": "file",
-          "evidence": "execution.py, trace_capture.py (_SCHEMAS), tests/test_identity_epoch.py",
-          "resolution": "serial-after"
-        }
-      ],
-      "status": "queued",
-      "notes": "Added 2026-10-31 at the W1 boundary under DH-32 and DH-33 (operator, 2026-10-28; FOR-1704 filed then) as the fourth serial W2 slice. Consumer: DH-34's two confirming quote pods after W2 merges and an interim re-pin read the new keys from the captured records alone. Anchors re-measured at main e3d1524b (v0.10.0) by the conductor's read-only lane before the brief was written; the q rows stay byte-identical in shape so every existing reader keeps its names. The dev-width non_checkpoint_bytes allowance that L2's pilot_transfer_limits now requires (#415) is measured on the same DH-34 pods before L8 seals the limits. Amended 2026-11-03 at the L4c boundary under DH-48 (operator 2026-11-02): FOR-1716 joins as this lane's sub-issue; load_h_run admits a null future_nll_per_dimension on a prediction row only under the recorded optimization.future_weight == 0 (h_aggregate.py, non-member; the P5-15 pin in tests/test_h_pair_request.py flips to load-through in the same commit).",
+      "conflict_edges": [],
+      "status": "active",
+      "notes": "Added 2026-10-31 at the W1 boundary under DH-32 and DH-33 (operator, 2026-10-28; FOR-1704 filed then) as the fourth serial W2 slice. Consumer: DH-34's two confirming quote pods after W2 merges and an interim re-pin read the new keys from the captured records alone. Anchors re-measured at main e3d1524b (v0.10.0) by the conductor's read-only lane before the brief was written; the q rows stay byte-identical in shape so every existing reader keeps its names. The dev-width non_checkpoint_bytes allowance that L2's pilot_transfer_limits now requires (#415) is measured on the same DH-34 pods before L8 seals the limits. Amended 2026-11-03 at the L4c boundary under DH-48 (operator 2026-11-02): FOR-1716 joins as this lane's sub-issue; load_h_run admits a null future_nll_per_dimension on a prediction row only under the recorded optimization.future_weight == 0 (h_aggregate.py, non-member; the P5-15 pin in tests/test_h_pair_request.py flips to load-through in the same commit). Re-based 2026-11-04 after the W2 merge: parent main (v0.12.1, 8c1f0c13); the #428 review corrections (evaluation_records.py and runner.py join the member touch set; the evaluation-record door is named for this lane's design gate) are on main via #432; the three W2 conflict edges are discharged by the merge. Amended 2026-11-05 by the L4d review fixes: DH-51 R1 (operator 2026-11-04) moved the DH-48 admission onto the authenticated HProfile manifest that run_start now carries (h-run-lifecycle-v1, schema name unchanged, additive, absence = today's refusal), and DH-52 made the latent-usage q operand the posterior mean vector behind a Protocol port with a closed StrEnum (draw_average is FOR-1721, not built). The evaluation-record door ruled by the design gate is h-predictive-evaluation-v2 with v1 read-old (not h-evaluation-record-proposals-v2). Nine reader members landed as one DG-A commit, 98110e21: scoring, execution, trace_capture, evaluation_records, runner, object_worker, worker_command, worker_execution and composition.cli. RETRACTED: 'h_aggregate.py, non-member' as the whole of DH-48 above; the loader is a non-member but the writer (object_worker, both run_start sites) is a member, so DH-48 is half member work. mlflow.py was dropped from the touch set (listed before, never touched: its diffstat is empty, the MetricSink port carried the new keys unchanged). h_tiny_tracer is touched but not a tuple member; h_telemetry and worker_log_events carry docstring edits only.",
       "brief": ".claude/workflows/briefs/h1-l4d-evaluation-instruments.md"
     },
     {

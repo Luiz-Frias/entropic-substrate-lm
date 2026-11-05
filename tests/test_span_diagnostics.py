@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import torch
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_span_probe import config
 from tests.test_span_state_collection import model
 
@@ -34,6 +35,7 @@ def lineage(tmp_path: Path) -> Lineage:
         output,
         max_source_bytes=1_000_000,
         max_artifact_bytes=LIMIT,
+        latent_usage=POSTERIOR_MEAN,
     )
     return template.profile, template.source_root, output, trained.receipt
 

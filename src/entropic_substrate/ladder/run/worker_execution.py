@@ -14,6 +14,7 @@ from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.core.sentence.runtime_precision import (
     require_observed_execution_precision,
 )
+from entropic_substrate.core.sentence.scoring import LatentUsageEstimator
 from entropic_substrate.kernel.artifacts import artifact_from_mapping, read_d1_artifact_bytes
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.kernel.runtime.logging import logger
@@ -137,8 +138,13 @@ def execute_probe_request(
     admission_memos: MutableMapping[str, SealMemo] | None = None,
     cells: "CellObserver | None" = None,
     corpus_memos: MutableMapping[str, CorpusMemo] | None = None,
+    latent_usage: LatentUsageEstimator,
 ) -> dict[str, object]:
     """Run the existing numerical/custody path after native input admission.
+
+    ``latent_usage`` (FOR-1704, DH-52) is the injected q-side operand of the evaluation's
+    latent-usage instrument, threaded unchanged to every ``run_probe_training`` call (both pair
+    cells included). It is required: this module chooses no operand.
 
     Completion means the requested engineering workload and readers finished.
     It does not claim useful generation, a scientific verdict, or a new launch grant.
@@ -195,6 +201,7 @@ def execute_probe_request(
             publication_timing=publication_timing,
             admission_memos=admission_memos,
             corpus_memos=corpus_memos,
+            latent_usage=latent_usage,
         )
     if cells is not None:
         raise ValueError("a single-profile request has no cells to observe")
@@ -260,6 +267,7 @@ def execute_probe_request(
         publication_timing=publication_timing,
         authority=request.authority,
         corpora=source_corpora,
+        latent_usage=latent_usage,
     )
     # FOR-1662: ONE fresh full-chain admission walk per artifact root per process.
     # The runner's completion/pause walk populated this memo for the /run root;
@@ -561,6 +569,7 @@ def _execute_pair(
     publication_timing: MutableMapping[str, float] | None,
     admission_memos: MutableMapping[str, SealMemo] | None,
     corpus_memos: MutableMapping[str, CorpusMemo] | None,
+    latent_usage: LatentUsageEstimator,
 ) -> dict[str, object]:
     """Donor to completion, hand-off, recipient (FOR-1693, D1/D2/D11, DH-15, DH-42, DH-45, DH-47).
 
@@ -657,6 +666,7 @@ def _execute_pair(
             authority=request.authority,
             scope=CellScope(request.binding.block_id, request.binding.pair_id, cell.token),
             corpora=source_corpora,
+            latent_usage=latent_usage,
         )
         return trained, operator_stopped
 

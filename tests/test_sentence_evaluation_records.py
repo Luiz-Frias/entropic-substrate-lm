@@ -4,6 +4,7 @@ import copy
 from pathlib import Path
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_sentence_execution import engine
 
 from entropic_substrate.ladder.gate.ladder_campaign import artifact_from_mapping
@@ -24,6 +25,7 @@ def evaluation(root: Path):
         output,
         max_source_bytes=1_000_000,
         max_artifact_bytes=10_000_000,
+        latent_usage=POSTERIOR_MEAN,
     )
     progress = read_json(output, result.receipt, max_bytes=10_000_000)
     artifact = artifact_from_mapping(progress["evaluations"][0]["artifact"])

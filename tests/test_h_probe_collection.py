@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_execution import prepared
 
@@ -34,7 +35,9 @@ def test_real_worker_completion_and_pause_keep_their_distinct_meaning(
         is None
     )
     assert not list(destination.iterdir())
-    object_worker.run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    object_worker.run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     report = collect_probe_terminal(
         objects, request, destination, expected_pod_id=None, max_marker_bytes=1_000_000
     )
@@ -65,7 +68,9 @@ def test_reported_failure_kinds_survive_capture_without_claiming_completion(
 
     monkeypatch.setattr(object_worker, "execute_probe_request", fail)
     with pytest.raises(type(error)):
-        object_worker.run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+        object_worker.run_object_worker(
+            objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+        )
     report = collect_probe_terminal(
         objects, request, destination, expected_pod_id=None, max_marker_bytes=1_000_000
     )
@@ -150,7 +155,9 @@ def test_failed_recovery_retains_terminal_bytes_without_a_collection_claim(
 
     monkeypatch.setattr(object_worker, "execute_probe_request", fail)
     with pytest.raises(RuntimeError):
-        object_worker.run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+        object_worker.run_object_worker(
+            objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+        )
     key = f"{request.prefix}/outputs/worker/failure.json"
     if tamper == "missing":
         del objects.values[key]

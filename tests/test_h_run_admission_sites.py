@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_h_probe_launch import launch, remote_request
 from tests.test_run_authority import authority as sealed_authority
 from tests.test_sentence_worker_request import request
@@ -262,6 +263,7 @@ def test_runner_driver_gate(
             max_source_bytes=1,
             max_artifact_bytes=1,
             authority=_authority(kind, run_class, stage),
+            latent_usage=POSTERIOR_MEAN,
         )
     )
     assert observed == _expected_driver(run_class, stage, kind)

@@ -26,7 +26,13 @@ from entropic_substrate.core.sentence.sampling import (
     SentenceSampler,
     VerifiedCorpus,
 )
-from entropic_substrate.core.sentence.scoring import importance_evaluate
+from entropic_substrate.core.sentence.scoring import (
+    MIXTURE_ALLOCATION,
+    LatentUsageEstimator,
+    ProposalPopulation,
+    derived_stream_keys,
+    evaluate_proposals,
+)
 from entropic_substrate.core.sentence.spine import CarrierBlock
 from entropic_substrate.kernel.lifecycle import ContentHash
 from entropic_substrate.ladder.capture.capture import read_prepared_corpus
@@ -46,6 +52,34 @@ from entropic_substrate.ladder.run.training import (
 
 if TYPE_CHECKING:  # seals imports this module, so the memo type is named for the checker only
     from entropic_substrate.ladder.run.seals import CorpusMemo
+
+
+def _log_rows(values: torch.Tensor) -> list[list[float | str]]:
+    """Finite floats, and the string ``"-inf"`` only where a zero density is admissible.
+
+    A NaN or ``+inf`` is not representable (the journal writes with ``allow_nan=False``) and
+    never reaches the record; the reader decides per column whether ``"-inf"`` is admitted.
+    """
+    return [["-inf" if v == -math.inf else float(v) for v in row] for row in values.tolist()]
+
+
+def _population_record(population: ProposalPopulation) -> dict[str, object]:
+    """One non-q proposal's v2 block: its draws' terms and importance rows, named."""
+    record: dict[str, object] = {"proposal": population.proposal}
+    if population.component is not None:
+        record["allocation"] = MIXTURE_ALLOCATION
+        record["component"] = [[int(v) for v in row] for row in population.component.tolist()]
+    record.update(
+        by_sample_count={
+            str(k): [asdict(r) for r in rows] for k, rows in population.by_sample_count.items()
+        },
+        log_weights=_log_rows(population.log_weights),
+        decoder_log_prob=_log_rows(population.decoder_log_prob),
+    )
+    if population.q_log_prob is not None:
+        record["q_log_prob"] = _log_rows(population.q_log_prob)
+    record["prior_log_prob"] = _log_rows(population.prior_log_prob)
+    return record
 
 
 def batch_coordinates(batch: SentenceBatch) -> list[dict[str, object]]:
@@ -325,14 +359,25 @@ class SentenceExecution:
                 row["wall_seconds"] = (time.perf_counter_ns() - started) / 1e9
         return row
 
-    def evaluate(self) -> dict[str, object]:
+    def evaluate(self, latent_usage: LatentUsageEstimator) -> dict[str, object]:
+        """Run the frozen predictive evaluation and return the ``h-predictive-evaluation-v2`` body.
+
+        ``latent_usage`` is the injected q-side operand of the latent-usage instrument (DH-52);
+        there is deliberately no default, and the record names the operand the implementation
+        itself declares. The q rows keep their v1 keys; the prior and mixture proposals, the
+        diagnostics and the latent-usage rows are additive keys of the v2 example. The attempt
+        record keeps the EXACT v1 example key set: it is a distinct forensic record
+        (``h-evaluation-attempt-v1``) and a v2-shaped example inside it would widen it unruled.
+        """
         if self.failed:
             raise ValueError("failed execution must recover before evaluation")
         if self.phase != "prediction":
             raise ValueError("predictive evaluation requires the frozen prediction phase")
         training = self.model.training
         devices = [0] if self.device.type == "cuda" else []
+        operand = latent_usage.operand
         examples: list[dict[str, object]] = []
+        records: list[dict[str, object]] = []
         started = time.perf_counter_ns()
         ticket = None
         attempt: dict[str, object] = {
@@ -360,44 +405,73 @@ class SentenceExecution:
                 # seed in [0, 2**32) (HProfile refuses larger), so paired seeds never
                 # share noise; at a fixed seed it is a bijection on step. seed + step is
                 # not injective (42 at step 4 == 44 at step 2). Pure in (seed, step).
-                torch.manual_seed((self.profile.seed * 0x9E3779B1 + self.step) % 2**32)
-                for _ in range(self.profile.schedule.evaluation_batches):
+                q_key = (self.profile.seed * 0x9E3779B1 + self.step) % 2**32
+                torch.manual_seed(q_key)
+                for index in range(self.profile.schedule.evaluation_batches):
                     batch = self.validation_sampler.next_batch()
                     attempt["current_source_batch"] = batch.identity
                     attempt["current_source_examples"] = batch_coordinates(batch)
+                    # FOR-1704: the prior and mixture draws run on streams derived from
+                    # (seed, step, batch index, proposal) inside nested fork_rng blocks, so q's
+                    # stream above advances across batches exactly as it did before them.
+                    prior_stream, mixture_stream = derived_stream_keys(
+                        seed=self.profile.seed, step=self.step, batch=index, q_key=q_key
+                    )
                     with torch.autocast(
                         self.device.type,
                         dtype=torch.bfloat16,
                         enabled=self.profile.precision == "bf16",
                     ):
-                        scores = importance_evaluate(
+                        scores = evaluate_proposals(
                             self.model,
                             batch.history,
                             batch.target,
                             sample_counts=self.profile.schedule.evaluated_samples,
                             sample_chunk_size=self.profile.schedule.importance_chunk,
+                            latent_usage=latent_usage,
+                            prior_stream=prior_stream,
+                            mixture_stream=mixture_stream,
                         )
-
-                    def log_rows(values: torch.Tensor) -> list[list[float | str]]:
-                        return [
-                            ["-inf" if v == -math.inf else float(v) for v in row]
-                            for row in values.tolist()
-                        ]
-
-                    examples.append(
+                    q = scores.q
+                    example: dict[str, object] = {
+                        "source_batch": batch.identity,
+                        "source_examples": batch_coordinates(batch),
+                        "source_bytes": q.source_bytes,
+                        "boundary_symbols": q.boundary_symbols,
+                        "by_sample_count": {
+                            str(k): [asdict(r) for r in rows]
+                            for k, rows in q.by_sample_count.items()
+                        },
+                        "log_weights": _log_rows(q.log_weights),
+                        "decoder_log_prob": _log_rows(q.decoder_log_prob),
+                        "prior_log_prob": _log_rows(q.prior_log_prob),
+                        "proposal_log_prob": _log_rows(q.proposal_log_prob),
+                    }
+                    examples.append(example)
+                    records.append(
                         {
-                            "source_batch": batch.identity,
-                            "source_examples": batch_coordinates(batch),
-                            "source_bytes": scores.source_bytes,
-                            "boundary_symbols": scores.boundary_symbols,
-                            "by_sample_count": {
-                                str(k): [asdict(r) for r in rows]
-                                for k, rows in scores.by_sample_count.items()
+                            **example,
+                            "proposals": {
+                                "prior": _population_record(scores.prior),
+                                "mixture": _population_record(scores.mixture),
                             },
-                            "log_weights": log_rows(scores.log_weights),
-                            "decoder_log_prob": log_rows(scores.decoder_log_prob),
-                            "prior_log_prob": log_rows(scores.prior_log_prob),
-                            "proposal_log_prob": log_rows(scores.proposal_log_prob),
+                            "diagnostics": {
+                                "prior_log_radius_mean": None
+                                if scores.prior_log_radius_mean is None
+                                else list(scores.prior_log_radius_mean),
+                                "q_log_radius_mean": None
+                                if scores.q_log_radius_mean is None
+                                else list(scores.q_log_radius_mean),
+                                "prior_q_cosine": list(scores.prior_q_cosine),
+                                "log_weight_sd": {
+                                    name: {str(k): list(sd) for k, sd in by_k.items()}
+                                    for name, by_k in scores.log_weight_sd.items()
+                                },
+                            },
+                            "latent_usage": {
+                                "q_decoder_log_prob": list(scores.q_latent_log_prob),
+                                "null_decoder_log_prob": list(scores.null_latent_log_prob),
+                            },
                         }
                     )
             attempt["status"] = "complete"
@@ -435,11 +509,12 @@ class SentenceExecution:
             finally:
                 attempt["wall_seconds"] = (time.perf_counter_ns() - started) / 1e9
         return {
-            "schema": "h-predictive-evaluation-v1",
+            "schema": "h-predictive-evaluation-v2",
             "meaning": "importance_weighted_log_marginal_estimate",
             "run_identity": self.profile.identity,
             "step": self.step,
-            "examples": examples,
+            "latent_operand": str(operand),
+            "examples": records,
             "wall_seconds": (time.perf_counter_ns() - started) / 1e9,
             "cuda_seconds": cuda_seconds,
         }

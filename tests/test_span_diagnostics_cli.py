@@ -5,6 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_sentence_rollout import scripted_tokens
 from tests.test_span_probe import config
 from tests.test_span_state_collection import model
@@ -34,6 +35,7 @@ def test_public_span_diagnostic_round_trip(
         root,
         max_source_bytes=1_000_000,
         max_artifact_bytes=10_000_000,
+        latent_usage=POSTERIOR_MEAN,
     )
     profile = write_json(tmp_path, "profile.json", template.profile.manifest, max_bytes=1_000_000)
     command = {

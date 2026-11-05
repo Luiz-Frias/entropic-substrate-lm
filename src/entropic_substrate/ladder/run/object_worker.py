@@ -12,6 +12,7 @@ from typing import Literal, cast
 from entropic_substrate.core.sentence.numerics import UndefinedDirection
 from entropic_substrate.core.sentence.profile import HProfile, RunSchedule
 from entropic_substrate.core.sentence.recovery_state import recovery_record
+from entropic_substrate.core.sentence.scoring import LatentUsageEstimator
 from entropic_substrate.kernel.artifacts import artifact_from_mapping
 from entropic_substrate.kernel.lifecycle import ArtifactIdentity, ContentHash
 from entropic_substrate.kernel.runtime.logging import logger
@@ -712,6 +713,31 @@ def _admit_pair_result(
     return row
 
 
+def _run_start_record(
+    request: AnyProbeRequest, profile: HProfile, runtime: dict[str, object]
+) -> dict[str, object]:
+    """The one ``run_start`` record both write sites build (single profile and pair cell).
+
+    DH-51 (R1): ``profile`` is the manifest of the SAME ``HProfile`` whose ``identity`` fills
+    ``profile_identity`` (the cell's profile on the pair path, the request's on the single path),
+    so a reader can authenticate it by rebuilding the profile and comparing the identity. The
+    schema name is unchanged: an absent ``profile`` (every earlier capture) is the declared
+    default. RETRACTION (house rule 4, 2026-11-04): this record had exactly eight keys, pinned by
+    equality; it has nine now.
+    """
+    return {
+        "schema": LIFECYCLE_SCHEMA,
+        "event": "run_start",
+        "request_sha256": request.digest,
+        "image": request.image,
+        "code_commit": request.code_commit,
+        "profile_identity": profile.identity,
+        "run_class": profile.run_class,
+        "runtime": runtime,
+        "profile": profile.manifest,
+    }
+
+
 def _cell_lifecycle(result_status: str) -> CellLifecycle | None:
     """The DH-50 ``esl.lifecycle`` value a cell's close writes; ``None`` writes none.
 
@@ -780,18 +806,7 @@ class _PairObserver:
         request = self._request
         sink = None if self._sinks is None else self._sinks.begin(cell, profile)
         if sink is not None:
-            sink.log(
-                {
-                    "schema": LIFECYCLE_SCHEMA,
-                    "event": "run_start",
-                    "request_sha256": request.digest,
-                    "image": request.image,
-                    "code_commit": request.code_commit,
-                    "profile_identity": profile.identity,
-                    "run_class": profile.run_class,
-                    "runtime": runtime,
-                }
-            )
+            sink.log(_run_start_record(request, profile, runtime))
             self._logged[cell] = sink
         self._began[cell] = time.perf_counter()
         self.open = cell
@@ -889,6 +904,7 @@ def run_object_worker(
     repo_root: Path | None = None,
     sink: MetricSink | None = None,
     cell_sinks: CellSinks | None = None,
+    latent_usage: LatentUsageEstimator,
 ) -> D1TrainerMailboxObjectIdentity:
     """Publish terminal status only after its snapshot is externally readable.
 
@@ -991,18 +1007,7 @@ def run_object_worker(
                 },
             )
             if sink is not None and isinstance(request, ProbeRequest):
-                sink.log(
-                    {
-                        "schema": LIFECYCLE_SCHEMA,
-                        "event": "run_start",
-                        "request_sha256": request.digest,
-                        "image": request.image,
-                        "code_commit": request.code_commit,
-                        "profile_identity": request.profile.identity,
-                        "run_class": request.profile.run_class,
-                        "runtime": runtime,
-                    }
-                )
+                sink.log(_run_start_record(request, request.profile, runtime))
                 started_logged = True
 
         stage = "execution"
@@ -1017,6 +1022,7 @@ def run_object_worker(
                 admission_memos=admission_memos,
                 cells=observer,
                 corpus_memos=corpus_memos,
+                latent_usage=latent_usage,
             )
         else:
             result = execute_probe_request(
@@ -1040,6 +1046,7 @@ def run_object_worker(
                 operator_stop=_stop_poll(objects, request, None),
                 admission_memos=admission_memos,
                 corpus_memos=corpus_memos,
+                latent_usage=latent_usage,
             )
         with narrated_stage("result_admission"):
             if pair is not None:

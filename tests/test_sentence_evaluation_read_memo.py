@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_h_worker_log_lines import bind_logs, of, read_log
 from tests.test_sentence_execution import engine
 
@@ -52,6 +53,7 @@ class _Run:
             self.output,
             max_source_bytes=SOURCE_LIMIT,
             max_artifact_bytes=LIMIT,
+            latent_usage=POSTERIOR_MEAN,
         )
         self.receipt = result.receipt
         roster = read_json(self.output, self.receipt, max_bytes=LIMIT)["evaluations"]

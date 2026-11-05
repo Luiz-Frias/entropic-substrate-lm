@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_h_probe_operator_stop import _MarkerStore
 from tests.test_sentence_execution import engine
@@ -31,6 +32,7 @@ from tests.test_sentence_worker_execution import prepared
 from tests.test_sentence_worker_transport import _FlakyReadStore
 from tests.test_sinks import FakeMlflowClient
 
+from entropic_substrate.core.sentence.scoring import LatentUsageEstimator
 from entropic_substrate.kernel.runtime.logging import configure_logging, logger
 from entropic_substrate.ladder.capture.adapters.composite import build_sink_for_run
 from entropic_substrate.ladder.capture.adapters.jsonl import JsonlSink
@@ -193,6 +195,7 @@ def test_training_loop_narrates_phases_seals_and_evaluations(
         output,
         max_source_bytes=1_000_000,
         max_artifact_bytes=10_000_000,
+        latent_usage=POSTERIOR_MEAN,
     )
     assert result.status == "training_complete"
     rows = read_log(log_file)
@@ -265,11 +268,11 @@ def test_evaluation_start_is_on_disk_while_the_evaluation_runs(
     original = SentenceExecution.evaluate
     seen: list[list[str]] = []
 
-    def spy(self: SentenceExecution) -> Any:
+    def spy(self: SentenceExecution, latent_usage: LatentUsageEstimator) -> Any:
         seen.append(
             [r["event"] for r in read_log(log_file) if r.get("event", "").startswith("evaluation.")]
         )
-        return original(self)
+        return original(self, latent_usage)
 
     monkeypatch.setattr(SentenceExecution, "evaluate", spy)
     template = engine(tmp_path)
@@ -281,6 +284,7 @@ def test_evaluation_start_is_on_disk_while_the_evaluation_runs(
         output,
         max_source_bytes=1_000_000,
         max_artifact_bytes=10_000_000,
+        latent_usage=POSTERIOR_MEAN,
     )
     assert seen == [
         ["evaluation.start"],
@@ -316,6 +320,7 @@ def test_checkpoint_seal_is_logged_after_the_l1_window_closes(
         max_source_bytes=1_000_000,
         max_artifact_bytes=10_000_000,
         publication_timing=_Timing(),
+        latent_usage=POSTERIOR_MEAN,
     )
     assert at_close == [0, 1, 2]
     assert len(of(read_log(log_file), "checkpoint.seal")) == 3
@@ -472,7 +477,9 @@ def test_snapshot_publication_is_bracketed_and_every_object_put_is_reported(
     marker = publish_probe_request(objects, request, inputs)
     workspace = tmp_path / "snapshot-worker"
     workspace.mkdir()
-    run_object_worker(objects, marker, workspace, max_request_bytes=1_000_000)
+    run_object_worker(
+        objects, marker, workspace, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     before = len(read_log(log_file))
     publish_worker_snapshot(
         objects, request, workspace, ("worker/start.json",), name="direct-probe"
@@ -501,7 +508,9 @@ def test_object_worker_reports_stages_snapshots_and_the_completion_marker_once(
     workspace = tmp_path / "object-worker"
     workspace.mkdir()
     before = len(read_log(log_file))
-    terminal = run_object_worker(objects, marker, workspace, max_request_bytes=1_000_000)
+    terminal = run_object_worker(
+        objects, marker, workspace, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     rows = read_log(log_file)[before:]
     complete_key = f"{request.prefix}/complete.json"
     assert terminal.key == complete_key
@@ -577,7 +586,9 @@ def test_a_stop_marker_is_reported_when_observed_and_a_failed_poll_is_a_warning(
     marker = publish_probe_request(objects, request, inputs)
     workspace = tmp_path / "stopped-worker"
     workspace.mkdir()
-    terminal = run_object_worker(objects, marker, workspace, max_request_bytes=1_000_000)
+    terminal = run_object_worker(
+        objects, marker, workspace, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     assert terminal.key == f"{request.prefix}/stopped.json"
     rows = read_log(log_file)
 
@@ -611,7 +622,9 @@ def test_the_stop_poll_backs_off_between_failed_reads_on_the_existing_schedule(
     marker = publish_probe_request(objects, request, inputs)
     workspace = tmp_path / "stopped-worker"
     workspace.mkdir()
-    run_object_worker(objects, marker, workspace, max_request_bytes=1_000_000)
+    run_object_worker(
+        objects, marker, workspace, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     assert slept == [0.05]
 
 
@@ -628,7 +641,9 @@ def test_a_present_marker_for_another_request_is_never_reported_as_observed(
     marker = publish_probe_request(objects, request, inputs)
     workspace = tmp_path / "foreign-marker-worker"
     workspace.mkdir()
-    terminal = run_object_worker(objects, marker, workspace, max_request_bytes=1_000_000)
+    terminal = run_object_worker(
+        objects, marker, workspace, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     rows = read_log(log_file)
     assert terminal.key == f"{request.prefix}/complete.json"
     assert of(rows, "stop_marker.observed") == []
@@ -1286,7 +1301,13 @@ def test_the_event_vocabulary_is_closed_both_ways(
     stop_marker = publish_probe_request(stopping, request, inputs)
     stop_workspace = tmp_path / "stop-worker"
     stop_workspace.mkdir()
-    run_object_worker(stopping, stop_marker, stop_workspace, max_request_bytes=1_000_000)
+    run_object_worker(
+        stopping,
+        stop_marker,
+        stop_workspace,
+        max_request_bytes=1_000_000,
+        latent_usage=POSTERIOR_MEAN,
+    )
 
     # worker.start/end, phase.*, checkpoint.seal, evaluation.*, completion.written (complete)
     (tmp_path / "full").mkdir()

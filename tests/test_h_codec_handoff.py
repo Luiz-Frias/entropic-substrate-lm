@@ -19,6 +19,7 @@ from typing import Any, Literal
 
 import pytest
 import torch
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_h1_observations import LABELS, build_recipient_block, standard_specs
 from tests.test_h_aggregate import IDENTITY_B, REQUEST_B, _drop, write_h_run
 from tests.test_sentence_profile import profile
@@ -127,6 +128,7 @@ def train(pair: Pair, subject: HProfile, root: Path, **options: Any) -> Training
         max_source_bytes=SOURCE_LIMIT,
         max_artifact_bytes=LIMIT,
         **options,
+        latent_usage=POSTERIOR_MEAN,
     )
 
 
@@ -1103,10 +1105,12 @@ def test_the_capture_vocabulary_gains_exactly_the_two_handoff_names() -> None:
     """FOR-1693 amendment (house rule 4): progress v2 joins the two hand-off names. The v1
     progress name stays in the vocabulary only so ``_collect`` can refuse it BY NAME."""
     schemas = trace_capture_module._SCHEMAS  # pyright: ignore[reportPrivateUsage]
+    # FOR-1704: the evaluation record gains its v2 name; v1 stays so the H0 captures replay
     assert schemas == PUBLISHED_SCHEMAS | {
         "h-codec-handoff-v1",
         "h-codec-handoff-seal-v1",
         "h-probe-training-progress-v2",
+        "h-predictive-evaluation-v2",
     }
 
 

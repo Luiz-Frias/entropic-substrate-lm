@@ -34,7 +34,8 @@ _SCHEMAS = frozenset(
         "h-codec-handoff-v1",
         "h-journal-shard-v1",
         "h-journal-shard-v2",
-        "h-predictive-evaluation-v1",
+        "h-predictive-evaluation-v1",  # FOR-1704: v1 stays readable (the H0 captures)
+        "h-predictive-evaluation-v2",
         "h-generation-receipt-v1",
         "h-generation-receipt-v2",
         "h-generation-receipt-v3",

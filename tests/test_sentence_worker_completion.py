@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from tests.latent_usage_support import POSTERIOR_MEAN
 from tests.test_d1_trainer_object_transport import _ObjectStore
 from tests.test_sentence_worker_execution import prepared
 from tests.test_sentence_worker_request import request as local_request
@@ -31,7 +32,9 @@ def test_external_completion_admission_matches_one_worker_lineage(tmp_path: Path
     marker = publish_probe_request(objects, request, inputs)
     worker = tmp_path / "object-worker"
     worker.mkdir()
-    terminal = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    terminal = run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     host = tmp_path / "host"
     host.mkdir()
     admitted = receive_worker_completion(
@@ -92,7 +95,9 @@ def _complete_fixture(
     marker = publish_probe_request(objects, request, inputs)
     worker = tmp_path / "object-worker"
     worker.mkdir()
-    terminal = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    terminal = run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     return request, terminal, dict(objects.values)
 
 
@@ -204,7 +209,9 @@ def test_a_pair_result_v2_is_refused_by_name_at_the_single_profile_completion(
     marker = publish_probe_request(objects, request, inputs)
     worker = tmp_path / "object-worker"
     worker.mkdir()
-    terminal = run_object_worker(objects, marker, worker, max_request_bytes=1_000_000)
+    terminal = run_object_worker(
+        objects, marker, worker, max_request_bytes=1_000_000, latent_usage=POSTERIOR_MEAN
+    )
     host = tmp_path / "host-honest"
     host.mkdir()
     # control: the single-profile result is admitted when it is what the worker wrote
