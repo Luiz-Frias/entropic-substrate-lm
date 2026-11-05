@@ -96,6 +96,20 @@ def test_a_null_under_a_recorded_nonzero_weight_keeps_the_existing_message(
     assert_refused_verbatim(_write(tmp_path, h0))
 
 
+def test_the_admission_follows_the_recorded_weight_not_the_stage(tmp_path: Path) -> None:
+    """An H0 profile recording weight 0.0 admits the null; a stage-keyed loader would refuse it.
+
+    Every other fixture here pairs the stage with the weight (H1 with zero, H0 with a non-zero
+    weight), so a loader keyed on ``stage == "H1"`` passed them all. This case separates the two:
+    the stage is H0, the recorded weight is exactly zero, and the manifest is authentic.
+    """
+    h0_zero = replace(profile(), optimization=replace(profile().optimization, future_weight=0.0))
+    assert h0_zero.stage == "H0"
+    run = load_h_run(*_write(tmp_path, h0_zero))
+    prediction = [scalars for _, phase, scalars in run.training if phase == "prediction"]
+    assert prediction and all("future_nll_per_dimension" not in s for s in prediction)
+
+
 def test_an_authentic_nonzero_weight_with_finite_values_loads_unchanged(tmp_path: Path) -> None:
     h0 = profile()
     run = load_h_run(*_write(tmp_path, h0, null_future=False))

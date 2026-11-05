@@ -21,6 +21,7 @@ from tests.test_h_worker_log_lines import bind_logs, read_log
 from tests.test_sentence_execution import engine
 
 from entropic_substrate.core.sentence import scoring
+from entropic_substrate.core.sentence.codec import teacher_forcing_prefix
 from entropic_substrate.core.sentence.law import DirectionalMagnitudeLaw, LawSpec
 from entropic_substrate.core.sentence.scoring import (
     LatentUsageOperand,
@@ -205,6 +206,88 @@ def test_the_attempt_record_keeps_the_exact_v1_example_key_set(tmp_path: Path) -
         assert set(example) == V1_EXAMPLE
     for example in record["examples"]:  # type: ignore[attr-defined]
         assert set(example) == V1_EXAMPLE | {"proposals", "diagnostics", "latent_usage"}
+
+
+class _SpyingPosteriorMean:
+    """The registered operand, plus what scoring handed back for each batch (the binding oracle)."""
+
+    operand = POSTERIOR_MEAN.operand
+
+    def __init__(self) -> None:
+        self.q: list[list[float]] = []
+        self.null: list[list[float]] = []
+        self.q_log_radius: list[list[float] | None] = []
+
+    def q_decoder_log_prob(self, score, posterior):  # type: ignore[no-untyped-def]
+        q = score(scoring.posterior_mean_vector(posterior))
+        self.q.append(q.tolist())
+        self.null.append(score(posterior.direction * scoring.NULL_LATENT_RADIUS).tolist())
+        radius = posterior.log_radius_mean
+        self.q_log_radius.append(None if radius is None else radius.double().tolist())
+        return q
+
+
+def _train_decoder_on_the_first_batch(run: SentenceExecution) -> Any:
+    """Teach the decoder to read the q posterior mean of the evaluation's first batch."""
+    sampler = run.validation_sampler
+    sampler.restore(sampler.snapshot() | {"cursor": 0})
+    batch = sampler.next_batch()
+    codec = run.model.codec
+    prefix = teacher_forcing_prefix(batch.target, codec.spec.max_sentence_bytes)
+    optimizer = torch.optim.AdamW(codec.decoder.parameters(), lr=1e-2)
+    run.model.eval()
+    with torch.enable_grad():
+        for _ in range(150):
+            latent = scoring.posterior_mean_vector(codec.posterior(batch.target)).detach()
+            logits = codec.decoder(latent, prefix)
+            loss = torch.nn.functional.cross_entropy(
+                logits.reshape(-1, logits.shape[-1]), batch.target.reshape(-1)
+            )
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+    return batch
+
+
+def test_the_record_binds_latent_usage_and_the_log_radii_to_their_writers_end_to_end(
+    tmp_path: Path,
+) -> None:
+    """E07/E08: the scoring-level and extractor-fixture tests cannot see the engine copy the two
+    latent-usage arrays (or the two log-radius arrays) into the WRONG record fields, because both
+    sides of each pair are only ever compared with themselves. Here a trained decoder makes q beat
+    the null, scoring's own return values are captured by a spy, and the persisted record must
+    carry exactly those values under exactly those names."""
+    run = _prediction_run(tmp_path, 1)
+    batch = _train_decoder_on_the_first_batch(run)
+    spy = _SpyingPosteriorMean()
+    record = run.evaluate(spy)  # type: ignore[arg-type]
+    example = record["examples"][0]  # type: ignore[index]
+    recorded_q = example["latent_usage"]["q_decoder_log_prob"]
+    recorded_null = example["latent_usage"]["null_decoder_log_prob"]
+    assert recorded_q == spy.q[0] and recorded_null == spy.null[0]
+    assert all(q > n for q, n in zip(recorded_q, recorded_null, strict=True)), (
+        recorded_q,
+        recorded_null,
+    )
+
+    metrics = project_evaluation(record)  # type: ignore[arg-type]
+    assert metrics is not None
+    usage = metrics["eval/latent_usage_posterior_mean_nats_per_byte"]
+    expected = sum(q - n for q, n in zip(spy.q[0], spy.null[0], strict=True)) / sum(
+        example["source_bytes"]
+    )
+    assert usage > 0 and usage == pytest.approx(expected, rel=1e-12)
+
+    diagnostics = example["diagnostics"]
+    assert spy.q_log_radius[0] is not None  # the default cell is magnitude-law
+    assert diagnostics["q_log_radius_mean"] == spy.q_log_radius[0]
+    with torch.no_grad():
+        prior_radius = run.model.predict(batch.history).law.log_radius_mean
+    assert prior_radius is not None
+    assert diagnostics["prior_log_radius_mean"] == pytest.approx(
+        prior_radius.double().tolist(), abs=1e-9
+    )
+    assert diagnostics["prior_log_radius_mean"] != diagnostics["q_log_radius_mean"]
 
 
 def test_evaluate_has_no_default_estimator() -> None:
@@ -435,6 +518,53 @@ def test_the_reader_refuses_a_consistently_forged_zero_density_producer(tmp_path
     assert _read(template, output, _tampered(template, output, artifact, control))
     forged = _rederived_mixture(template.profile, zero_producer=True)
     with pytest.raises(ValueError, match="mixture importance terms"):
+        _read(template, output, _tampered(template, output, artifact, forged))
+
+
+def _rederived_positive_decoder(
+    profile: Any, block: str, *, forge: bool
+) -> Callable[[dict[str, Any]], None]:
+    """A tamper that forges ONE positive decoder log-probability (impossible for a probability)
+    in the ``prior`` or ``mixture`` block and keeps the block SELF-CONSISTENT: the weight, every
+    k-prefix summary and every log-weight sd are recomputed from the forged term, so the weight
+    reconciliation passes and ONLY the ``decoder > 0`` check can refuse the record."""
+
+    def apply(payload: dict[str, Any]) -> None:
+        example = payload["examples"][0]
+        proposal = example["proposals"][block]
+        if forge:
+            proposal["decoder_log_prob"][0][0] = 0.5
+            if block == "prior":
+                proposal["log_weights"][0][0] = 0.5  # decoder + prior - prior
+            else:
+                both = torch.tensor(
+                    [proposal["q_log_prob"][0][0], proposal["prior_log_prob"][0][0]],
+                    dtype=torch.float64,
+                )
+                density = float(torch.logsumexp(both, 0)) - math.log(2)
+                proposal["log_weights"][0][0] = 0.5 + proposal["prior_log_prob"][0][0] - density
+        weights = torch.tensor(proposal["log_weights"], dtype=torch.float64)
+        for k in profile.schedule.evaluated_samples:
+            proposal["by_sample_count"][str(k)] = [
+                asdict(row) for row in importance_statistics(weights[:k])
+            ]
+            example["diagnostics"]["log_weight_sd"][block][str(k)] = [
+                float(column.std(unbiased=True)) for column in weights[:k].unbind(dim=1)
+            ]
+
+    return apply
+
+
+@pytest.mark.parametrize("block", ["prior", "mixture"])
+def test_the_reader_refuses_a_consistently_forged_positive_decoder_log_prob(
+    tmp_path: Path, block: str
+) -> None:
+    """The control re-derives without forging and must be admitted: the helper is faithful."""
+    template, output, artifact = _run(tmp_path, mode="sphere")
+    control = _rederived_positive_decoder(template.profile, block, forge=False)
+    assert _read(template, output, _tampered(template, output, artifact, control))
+    forged = _rederived_positive_decoder(template.profile, block, forge=True)
+    with pytest.raises(ValueError, match=f"{block} importance terms"):
         _read(template, output, _tampered(template, output, artifact, forged))
 
 

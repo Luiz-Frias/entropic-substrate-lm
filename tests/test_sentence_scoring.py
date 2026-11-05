@@ -304,6 +304,39 @@ def test_the_mixture_density_is_a_logsumexp_not_a_log_of_a_sum() -> None:
     assert mixture_log_density(torch.tensor([1.0]), torch.tensor([2.0])).dtype == torch.float64
 
 
+def test_the_mixture_survives_both_components_below_the_exp_floor_and_above_the_ceiling() -> None:
+    """A log of a sum of exponentials fails here; the ``far`` case above keeps one component at 0.
+
+    With the larger log density exactly 0 the naive form returns ``-log 2`` by luck: ``exp(0)``
+    is finite. These rows put BOTH components under float64's exp floor (about -745, so the sum
+    underflows to 0 and the log to ``-inf``) or over its ceiling (about 709, so the sum overflows
+    to ``inf``). The logsumexp form returns the larger component minus ``log 2`` in every case.
+    """
+    log_q = torch.tensor([-1000.0, -3000.0, 800.0, -750.0])
+    log_p = torch.tensor([-2500.0, -1000.0, -300.0, -9000.0])
+    mixed = mixture_log_density(log_q, log_p)
+    larger = torch.maximum(log_q, log_p).double()
+    assert torch.isfinite(mixed).all()
+    assert torch.equal(mixed, larger - math.log(2))
+    assert mixed[0].item() == pytest.approx(-1000.0 - math.log(2))
+    assert mixed[2].item() == pytest.approx(800.0 - math.log(2))
+
+
+@pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
+def test_a_nonfinite_latent_usage_operand_is_refused_with_its_own_message(bad: float) -> None:
+    """``_row_floats`` is the writer's last guard before a diagnostic reaches the record."""
+
+    class _NonFinite:
+        operand = POSTERIOR_MEAN.operand
+
+        def q_decoder_log_prob(self, score, posterior):  # type: ignore[no-untyped-def]
+            return torch.full((posterior.direction.shape[0],), bad, dtype=torch.float64)
+
+    model = _frozen("sphere")
+    with pytest.raises(ValueError, match="nonfinite per-row evaluation diagnostic"):
+        _proposals(model, estimator=_NonFinite())
+
+
 def test_the_log_weight_sd_is_unbiased_and_absent_for_a_zero_density_row() -> None:
     weights = torch.tensor([[1.0, -math.inf], [3.0, 0.0], [5.0, 1.0]], dtype=torch.float64)
     sd = log_weight_sd(weights, 3)

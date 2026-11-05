@@ -221,6 +221,30 @@ def test_a_proposal_block_on_some_examples_and_not_others_is_refused_by_its_own_
     assert project_evaluation(fx.event([_full_example(), second])) is None
 
 
+@pytest.mark.parametrize(
+    "absent",
+    ["log_weight_sd", "latent_usage", "prior_log_radius_mean", "q_log_radius_mean"],
+)
+def test_a_diagnostic_on_some_examples_and_not_others_is_refused_by_its_own_guard(
+    absent: str,
+) -> None:
+    """X15 (L3 review): removing the whole partial-presence guard, or any one of its flags, left
+    every test GREEN, because the proposal guard above already refuses the sibling fixtures. Here
+    the second example is a COMPLETE example that differs from the first ONLY in the one named
+    diagnostic, so the proposal guard cannot be the one that fires."""
+    second = _full_example()
+    if absent == "latent_usage":
+        del second["latent_usage"]
+    elif absent == "log_weight_sd":
+        second["diagnostics"]["log_weight_sd"] = None
+    else:
+        second["diagnostics"][absent] = None
+    assert set(second["proposals"]) == {"prior", "mixture"}
+    assert project_evaluation(fx.event([_full_example(), second])) is None
+    # the control: two complete examples project, so the refusal above is the one absence
+    assert project_evaluation(fx.event([_full_example(), _full_example()])) is not None
+
+
 def test_log_weight_sd_skips_rows_without_an_sd_and_never_invents_one() -> None:
     sd = {"q": {2: [None, 1.5], 4: [None, None]}}
     m = _metrics(fx.event([_full_example(sd=sd)]))
