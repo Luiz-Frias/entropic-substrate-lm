@@ -336,6 +336,10 @@ def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
             return None
         tallies["q"].add(q_rows, ex.get("source_bytes"))
         seen["q"] += 1
+        # the population every other block of THIS example must cover (PR #435 review round 3):
+        # the same sample counts as q and the same number of target rows at each one
+        q_shape = {k: len(rows) for k, rows in q_rows.items()}
+        carried = {"q"}
         proposals = ex.get("proposals")
         if proposals is not None:
             if not isinstance(proposals, dict):
@@ -349,6 +353,9 @@ def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
                 block_rows = _rows(cast(dict[str, object], block).get("by_sample_count"))
                 if block_rows is None or cast(dict[str, object], block).get("proposal") != name:
                     return None
+                if {k: len(rows) for k, rows in block_rows.items()} != q_shape:
+                    return None
+                carried.add(name)
                 tallies[name].add(block_rows, ex.get("source_bytes"))
                 seen[name] += 1
         diagnostics = ex.get("diagnostics")
@@ -381,8 +388,14 @@ def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
             if spread is not None:
                 if not isinstance(spread, dict):
                     return None
+                # a spread for exactly the proposals this example carries, each at q's sample
+                # counts: a missing one would leave its key averaged over the other examples
+                if set(cast(dict[object, object], spread)) != carried:
+                    return None
                 for name, by_k in cast(dict[str, object], spread).items():
                     if name not in PROPOSALS or not isinstance(by_k, dict):
+                        return None
+                    if {str(k) for k in cast(dict[object, object], by_k)} != set(q_shape):
                         return None
                     for k, sds in cast(dict[object, object], by_k).items():
                         # a None entry stays (a zero-density row has no sd); the count does not

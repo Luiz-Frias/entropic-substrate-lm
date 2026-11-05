@@ -290,8 +290,56 @@ def test_a_diagnostic_array_shorter_than_the_target_rows_voids_the_projection(
     assert project_evaluation(fx.event([_full_example()])) is not None
 
 
+def _drop(example: dict[str, Any], path: tuple[str, ...]) -> dict[str, Any]:
+    node: Any = example
+    for key in path[:-1]:
+        node = node[key]
+    del node[path[-1]]
+    return example
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ("diagnostics", "log_weight_sd", "mixture"),
+        ("diagnostics", "log_weight_sd", "prior"),
+        ("diagnostics", "log_weight_sd", "q"),
+        ("diagnostics", "log_weight_sd", "prior", "4"),
+        ("diagnostics", "log_weight_sd", "q", "2"),
+        ("proposals", "prior", "by_sample_count", "4"),
+        ("proposals", "mixture", "by_sample_count", "2"),
+    ],
+    ids=lambda path: "-".join(path),
+)
+def test_a_block_without_every_carried_proposal_and_q_sample_count_voids_the_projection(
+    path: tuple[str, ...],
+) -> None:
+    """PR #435 review round 3 (CodeRabbit): the row-count guard pinned each list's length but not
+    WHICH proposals and sample counts an example carries, so the second example below projected
+    and the affected keys averaged over the first example alone, while ``h_aggregate`` refuses
+    the same record. MEASURED 2026-11-05: without the key-set checks every case projects."""
+    assert project_evaluation(fx.event([_full_example(), _drop(_full_example(), path)])) is None
+    assert project_evaluation(fx.event([_drop(_full_example(), path)])) is None
+    # the control: two complete examples project, so the refusal is the one missing key
+    assert project_evaluation(fx.event([_full_example(), _full_example()])) is not None
+
+
+@pytest.mark.parametrize("name", ["prior", "mixture"])
+def test_a_proposal_block_with_fewer_rows_than_q_voids_the_projection(name: str) -> None:
+    """The reader's round 1 refusal (a proposal that lost a row at one k), mirrored in the
+    projection so the two never disagree on one record."""
+    example = _full_example()
+    rows = example["proposals"][name]["by_sample_count"]["4"]
+    assert len(rows) == 2
+    del rows[-1]
+    assert project_evaluation(fx.event([example])) is None
+    assert project_evaluation(fx.event([_full_example()])) is not None
+
+
 def test_log_weight_sd_skips_rows_without_an_sd_and_never_invents_one() -> None:
-    sd = {"q": {2: [None, 1.5], 4: [None, None]}}
+    # every carried proposal names every sample count; a row without an sd is a None entry
+    absent = {2: [None, None], 4: [None, None]}
+    sd = {"q": {2: [None, 1.5], 4: [None, None]}, "prior": absent, "mixture": absent}
     m = _metrics(fx.event([_full_example(sd=sd)]))
     assert m["eval/log_weight_sd_k2"] == pytest.approx(1.5)
     assert "eval/log_weight_sd_k4" not in m
