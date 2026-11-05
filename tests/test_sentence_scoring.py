@@ -460,3 +460,55 @@ def test_the_derived_stream_forks_the_generators_of_the_device_the_draws_live_on
     with scoring._stream(7, torch.device(device)):  # pyright: ignore[reportPrivateUsage]
         pass
     assert seen == [forked]
+
+
+# ---------------------------------------------------------------------------------------------
+# The writer's own refusals: a zero density at a sample a proposal itself produced is impossible
+# ---------------------------------------------------------------------------------------------
+def _zero_density_at(monkeypatch: pytest.MonkeyPatch, which: int) -> None:
+    """Make the ``which``-th law density of ONE ``evaluate_proposals`` call a genuine zero
+    (-inf) at every sample, as an exact antipode would.
+
+    An exact antipode is not constructible from the law's own direction in float32 (the stored
+    direction is unit only to rounding, so the density there is large and finite), hence the
+    density itself is replaced. The densities are scored in a fixed order: q's prior and q's
+    own (0, 1), the prior's (2), then the mixture's q and prior (3, 4).
+    """
+    from entropic_substrate.core.sentence.law import DirectionalMagnitudeLaw
+
+    original = DirectionalMagnitudeLaw.log_prob
+    calls = {"n": 0}
+
+    def log_prob(law: DirectionalMagnitudeLaw, value: torch.Tensor) -> torch.Tensor:
+        index = calls["n"]
+        calls["n"] += 1
+        result = original(law, value)
+        return torch.full_like(result, -torch.inf) if index == which else result
+
+    monkeypatch.setattr(DirectionalMagnitudeLaw, "log_prob", log_prob)
+
+
+def test_the_writer_refuses_a_zero_density_at_a_sample_drawn_from_the_prior(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S36: without the writer's own refusal, the prior weights are nan and a LATER, generic
+    ``nonfinite importance arithmetic`` fires instead. The exact message pins the writer guard."""
+    model = _frozen("sphere")
+    assert _proposals(model).prior is not None  # control: the unmodified draws are admitted
+    _zero_density_at(monkeypatch, 2)
+    with pytest.raises(ValueError) as caught:
+        _proposals(model)
+    assert str(caught.value) == "nonfinite density at a sample drawn from the prior"
+
+
+def test_the_writer_refuses_a_zero_density_at_a_sample_drawn_from_the_mixture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S35: a producing draw with zero density keeps the MIXTURE density finite (the other
+    component covers it), so nothing downstream notices; only the writer's refusal does."""
+    model = _frozen("sphere")
+    assert _proposals(model).mixture is not None  # control: the unmodified draws are admitted
+    _zero_density_at(monkeypatch, 4)
+    with pytest.raises(ValueError) as caught:
+        _proposals(model)
+    assert str(caught.value) == "nonfinite density at a sample drawn from the mixture"

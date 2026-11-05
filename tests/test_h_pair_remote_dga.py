@@ -443,10 +443,11 @@ def test_a_stopped_pair_resumes_and_the_host_verifies_the_handoff_its_resumed_li
     assert [s.profile_identity for s in stitched.segments] == [pair.recipient.identity] * 2
     prediction = [scalars for _, phase, scalars in stitched.run.training if phase == "prediction"]
     assert prediction and all("future_nll_per_dimension" not in s for s in prediction)
-    with pytest.raises(TelemetryGap, match="step 1 \\(prediction\\) has a null"):
+    stripped_a = _without_manifest(observability_a / "recipient", tmp_path / "stripped-a")
+    with pytest.raises(TelemetryGap) as refused:
         load_h_resumed_run(  # the same lineage with pod A's manifest stripped keeps today's refusal
             [
-                _without_manifest(observability_a / "recipient", tmp_path / "stripped-a"),
+                stripped_a,
                 (
                     observability_b / "recipient" / "metrics.jsonl",
                     observability_b / "recipient" / "worker-log.jsonl",
@@ -454,6 +455,10 @@ def test_a_stopped_pair_resumes_and_the_host_verifies_the_handoff_its_resumed_li
             ],
             handoff=proof,
         )
+    # verbatim (S24): a regex search of a prefix would pass a message with a suffix appended
+    assert str(refused.value) == (
+        f"{stripped_a[0]}: step 1 (prediction) has a null future_nll_per_dimension"
+    )
 
 
 def _without_manifest(cell: Path, into: Path) -> tuple[Path, Path]:

@@ -26,7 +26,16 @@ from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap
 
 pytestmark = pytest.mark.unit
 
-NULL_MESSAGE = r"step 1 \(prediction\) has a null future_nll_per_dimension"
+# the refusal text as it stood before L4d, pinned VERBATIM (S24): a ``match=`` regex searches a
+# prefix, so a suffix appended to the message (for example " (no manifest)") would pass it
+NULL_TAIL = "step 1 (prediction) has a null future_nll_per_dimension"
+
+
+def assert_refused_verbatim(files: tuple[Path, Path], **kwargs: Any) -> None:
+    """``load_h_run`` refuses with exactly ``<metrics path>: <NULL_TAIL>``, nothing before or after."""
+    with pytest.raises(TelemetryGap) as caught:
+        load_h_run(*files, **kwargs)
+    assert str(caught.value) == f"{files[0]}: {NULL_TAIL}"
 
 
 def _h1(weight: float = 0.0) -> HProfile:
@@ -73,9 +82,7 @@ def test_a_zero_recorded_weight_admits_the_null_and_summarizes_it_as_absent(
 
 
 def test_the_same_files_with_the_manifest_stripped_keep_todays_refusal(tmp_path: Path) -> None:
-    files = _write(tmp_path, _h1(), drop_profile=True)
-    with pytest.raises(TelemetryGap, match=NULL_MESSAGE):
-        load_h_run(*files)
+    assert_refused_verbatim(_write(tmp_path, _h1(), drop_profile=True))
 
 
 def test_a_null_under_a_recorded_nonzero_weight_keeps_the_existing_message(
@@ -86,8 +93,7 @@ def test_a_null_under_a_recorded_nonzero_weight_keeps_the_existing_message(
         _h1(0.3)
     h0 = replace(profile(), optimization=replace(profile().optimization, future_weight=0.3))
     assert h0.stage == "H0"
-    with pytest.raises(TelemetryGap, match=NULL_MESSAGE):
-        load_h_run(*_write(tmp_path, h0))
+    assert_refused_verbatim(_write(tmp_path, h0))
 
 
 def test_an_authentic_nonzero_weight_with_finite_values_loads_unchanged(tmp_path: Path) -> None:
@@ -163,5 +169,4 @@ def test_the_admission_is_the_same_on_the_warmup_steps_override(tmp_path: Path) 
     run = load_h_run(*files, warmup_steps=2)
     assert any(phase == "prediction" for _, phase, _ in run.training)
     stripped = _write(tmp_path / "s", _h1(), drop_profile=True)
-    with pytest.raises(TelemetryGap, match=NULL_MESSAGE):
-        load_h_run(*stripped, warmup_steps=2)
+    assert_refused_verbatim(stripped, warmup_steps=2)

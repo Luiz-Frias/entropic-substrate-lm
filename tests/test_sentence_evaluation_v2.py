@@ -10,7 +10,7 @@ import copy
 import json
 import math
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -26,9 +26,10 @@ from entropic_substrate.core.sentence.scoring import (
     LatentUsageOperand,
     derived_stream_keys,
     importance_evaluate,
+    importance_statistics,
 )
 from entropic_substrate.ladder.gate.ladder_campaign import artifact_from_mapping
-from entropic_substrate.ladder.run import evaluation_records, runner, trace_capture
+from entropic_substrate.ladder.run import evaluation_records, execution, runner, trace_capture
 from entropic_substrate.ladder.run.evaluation_records import read_evaluation
 from entropic_substrate.ladder.run.execution import SentenceExecution, _log_rows
 from entropic_substrate.ladder.run.h_metric_extractor import (
@@ -325,6 +326,29 @@ def test_the_extra_streams_depend_only_on_seed_step_batch_and_proposal(tmp_path:
     assert len(keys) == 2
 
 
+def test_evaluate_hands_each_batch_its_own_index_to_the_derived_streams(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """S47: the pure key function is tested above, but nothing pinned that ``evaluate`` calls it
+    with the batch INDEX. A constant there makes every batch draw its prior and mixture noise on
+    the same keys, and every other test still passes."""
+    run = _prediction_run(tmp_path, 3)
+    seen: list[dict[str, int]] = []
+
+    def spy(**kwargs: int) -> tuple[int, int]:
+        seen.append(dict(kwargs))
+        return derived_stream_keys(**kwargs)
+
+    monkeypatch.setattr(execution, "derived_stream_keys", spy)
+    run.evaluate(POSTERIOR_MEAN)
+    q_key = (run.profile.seed * 0x9E3779B1 + run.step) % 2**32
+    assert [call["batch"] for call in seen] == [0, 1, 2]
+    assert {(call["seed"], call["step"], call["q_key"]) for call in seen} == {
+        (run.profile.seed, run.step, q_key)
+    }
+    assert len({derived_stream_keys(**call) for call in seen}) == 3
+
+
 # ------------------------------------------------------------------------------ exact -inf
 def test_an_antipodal_mixture_draw_survives_the_artifact_write_and_the_reader(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -374,6 +398,44 @@ def test_the_reader_refuses_a_producing_component_with_a_zero_density(tmp_path: 
 
     with pytest.raises(ValueError, match="mixture importance terms"):
         _read(template, output, _tampered(template, output, artifact, zero_producer))
+
+
+def _rederived_mixture(profile: Any, *, zero_producer: bool) -> Callable[[dict[str, Any]], None]:
+    """A tamper that keeps the mixture block SELF-CONSISTENT: weights, every k-prefix summary and
+    every log-weight sd are recomputed from the (possibly forged) recorded terms. With
+    ``zero_producer`` the first draw is forged as produced by q while q's density there is zero."""
+
+    def apply(payload: dict[str, Any]) -> None:
+        example = payload["examples"][0]
+        mixture = example["proposals"]["mixture"]
+        if zero_producer:
+            mixture["q_log_prob"][0][0] = "-inf"
+            mixture["component"][0][0] = 0  # drawn from q, so its own density cannot be zero
+            # the density is now prior - log 2, so the weight is decoder + log 2
+            mixture["log_weights"][0][0] = mixture["decoder_log_prob"][0][0] + math.log(2)
+        weights = torch.tensor(mixture["log_weights"], dtype=torch.float64)
+        for k in profile.schedule.evaluated_samples:
+            mixture["by_sample_count"][str(k)] = [
+                asdict(row) for row in importance_statistics(weights[:k])
+            ]
+            example["diagnostics"]["log_weight_sd"]["mixture"][str(k)] = [
+                float(column.std(unbiased=True)) for column in weights[:k].unbind(dim=1)
+            ]
+
+    return apply
+
+
+def test_the_reader_refuses_a_consistently_forged_zero_density_producer(tmp_path: Path) -> None:
+    """S42h: the older test above also trips the weight reconciliation, because its tamper does
+    not recompute the weights, so it cannot tell whether the producing-component check works.
+    Here every derived field is recomputed, so ONLY the producing check can refuse the record.
+    The control re-derives without forging and must be admitted: the helper is faithful."""
+    template, output, artifact = _run(tmp_path, mode="sphere")
+    control = _rederived_mixture(template.profile, zero_producer=False)
+    assert _read(template, output, _tampered(template, output, artifact, control))
+    forged = _rederived_mixture(template.profile, zero_producer=True)
+    with pytest.raises(ValueError, match="mixture importance terms"):
+        _read(template, output, _tampered(template, output, artifact, forged))
 
 
 def test_a_v1_named_record_with_v2_keys_and_a_v2_record_missing_one_are_refused(
