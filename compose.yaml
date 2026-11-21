@@ -107,7 +107,7 @@ services:
       # enforced — verified in the real compose stack (postgres + R2):
       # allowed Host -> 200, foreign Host -> 403 on both the REST API and
       # the UI, foreign Host -> 200 on /health (that exemption is upstream's
-      # and is pinned by tests/test_mlflow_live.py).
+      # and is pinned by tests/live/test_mlflow_live.py).
       #
       # The operator-facing names stay MLFLOW_ALLOWED_HOSTS /
       # MLFLOW_CORS_ALLOWED_ORIGINS — .env, the Railway service, and the
@@ -147,7 +147,7 @@ services:
     # under `environment:` above; see that block for the mechanism and the
     # injection history. This command: is therefore a FLAT ARGV LIST with no
     # shell and no `$` in any entry, which is the property
-    # tests/test_compose_config.py pins.
+    # tests/repo/test_compose_config.py pins.
     #
     # A RETRACTION, because this file's comments are treated as evidence.
     # An earlier revision wrapped this command in `sh -c` so two
@@ -207,7 +207,7 @@ services:
       # commingling: the gate's output is disposable and this prefix can be
       # lifecycle-expired wholesale; the deployed server's mlflow/ (set in its
       # OWN environment, never this file) holds citable artifacts. Pinned by
-      # tests/test_compose_config.py.
+      # tests/repo/test_compose_config.py.
       - --artifacts-destination
       - s3://entropic-substrate-lm/mlflow-live-gate/
     healthcheck:
@@ -251,7 +251,7 @@ services:
   # CREATED — so the exact string mlflow's allowlist would need to admit a
   # request routed back through Caddy on localhost is not knowable before
   # mlflow itself boots with its allowlist already baked into its
-  # environment. tests/test_caddy_auth.py resolves this by bringing this
+  # environment. tests/live/test_caddy_auth.py resolves this by bringing this
   # service up FIRST (alongside postgres, without mlflow), discovering its
   # assigned port, and only THEN starting mlflow with that exact
   # `host:port` folded into MLFLOW_ALLOWED_HOSTS alongside the fixed public

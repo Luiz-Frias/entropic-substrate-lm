@@ -17,7 +17,7 @@ a host with no CUDA device:
   there is one definition of each digest in the tree;
 * the RNG digest covers the stored payload's full CUDA tuple (``rng_digest`` iterates it), so a
   pod-written checkpoint's per-device states are part of the proof. On a CPU fixture the tuple is
-  empty, and ``tests/test_h_host_pair_verifier.py`` pins a synthetic non-empty tuple.
+  empty, and ``tests/unit/ladder/run/test_h_host_pair_verifier.py`` pins a synthetic non-empty tuple.
 
 ``codec_handoff`` is a checkpoint-reader member and is NOT touched here (FOR-1717 owns its
 frame replays); this module is not a member and is not in ``_READER_MODULES``. The two private
@@ -25,7 +25,7 @@ helpers it mirrors (``_walk`` and ``_same_value``) are copied, not imported, and
 
 Scope of the claim: equal to ``admit_codec_pair`` on every refusal the pair check names
 (``pair_predicate``, ``independent_warmup``, ``chained_handoff``, ``foreign_donor``,
-``construction_divergence``, ``payload_mismatch``), proven by ``tests/test_h_host_pair_verifier.py``
+``construction_divergence``, ``payload_mismatch``), proven by ``tests/unit/ladder/run/test_h_host_pair_verifier.py``
 over L4a's ``ADMIT_HAZARDS`` table (``pair_predicate`` has no row there: a same-carrier pair is
 pinned in its own test, which compares both verifiers' code and detail). NOT claimed: the full
 tensor/optimizer-moment admission (``checkpoint.load_checkpoint``'s finiteness and shape checks),

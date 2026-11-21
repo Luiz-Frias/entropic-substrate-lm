@@ -15,7 +15,7 @@ evidence, only judge it." ``exit_gate.py``'s own docstring has been updated to
 stop claiming this CLI is out of scope / a future follow-on — it exists now,
 here, ported test-first against the same 14 cases (11 CLI + 3 isolation) that
 ``exit-gate.test.ts`` pins for ``run-exit-gate.ts``. See
-``tests/test_run_exit_gate.py``.
+``tests/repo/test_run_exit_gate.py``.
 
 ENV QUARANTINE (core.worktree incident, 2026-07-13): every child this runner
 spawns -- its own git reads AND the gate command -- gets a sanitized env with

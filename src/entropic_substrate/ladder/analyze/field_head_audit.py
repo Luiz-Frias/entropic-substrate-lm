@@ -396,7 +396,7 @@ def collect_field_states(encoder: FieldEncoder, batches: Iterable[torch.Tensor])
     under audit, so re-deriving ``h`` here would audit this module's
     reimplementation instead of the encoder's own pass. The hook fires because
     ``FieldEncoder.forward`` reaches ``norm_f`` through ``nn.Module.__call__``
-    (the same property ``tests/test_field_encoder.py``'s anti-leakage hook test
+    (the same property ``tests/unit/core/substrate/test_field_encoder.py``'s anti-leakage hook test
     depends on).
 
     ``encoder.eval()``: a diagnostic must be deterministic, and a

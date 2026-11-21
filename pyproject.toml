@@ -40,7 +40,7 @@ deploy = [
   # — psutil happened to be present transitively (torch) in this dev venv,
   # which is exactly the kind of accidental coverage that silently vanishes
   # on a different base image. Pinned here, not in dev: the unit suite
-  # (tests/test_sinks.py) injects a fake monitor factory and never imports
+  # (tests/unit/ladder/capture/reader/test_sinks.py) injects a fake monitor factory and never imports
   # either — this is training-pod-only observability.
   "psutil>=6.0.0",
   "pynvml>=12.0.0",
@@ -53,7 +53,7 @@ deploy = [
 # these three have no business anywhere near it — an analysis library on a
 # training pod is dead weight at best and, on the H100 image's already-tight
 # CUDA/torch dependency resolution, a resolver hazard at worst. `dev` includes
-# this group so the unit suite (tests/test_analysis_charts.py and siblings)
+# this group so the unit suite (tests/unit/ladder/analyze/test_analysis_charts.py and siblings)
 # can import matplotlib/marimo/plotly.
 analysis = [
   # Registered paired-test quantiles, pilot variance bounds and power calculations.
@@ -120,7 +120,7 @@ constraint-dependencies = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["src", "tests"]
+src = ["src", "tests", "tests/support"]
 extend-exclude = ["references"]
 
 [tool.ruff.lint]
@@ -219,7 +219,7 @@ markers = [
 #
 # `cz check` is the repo's only conventional-commit gate: gitlint runs its
 # default rules, which do not include CT1. So this pattern is load-bearing, and
-# `tests/test_commit_schema.py` pins both of its arms.
+# `tests/repo/test_commit_schema.py` pins both of its arms.
 #
 # Why cz_customize rather than the stock plugin. MEASURED 2026-08-16, commitizen
 # 4.11.6: a top-level `[tool.commitizen] schema_pattern` is parsed and then

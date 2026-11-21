@@ -45,7 +45,7 @@ jobs:
           enable-cache: true
 
       # Exact patch, never a floating "3.12": the identity regime table in
-      # tests/test_identity_epoch.py keys on (python_version, torch.__version__),
+      # tests/unit/core/observation/test_identity_epoch.py keys on (python_version, torch.__version__),
       # so a runner that resolves a newer CPython fails the digest test by name.
       # MEASURED 2026-10-02 (3.12.14 -> 3.12.15, PR #323) and 2026-10-27 (3.12.15 ->
       # 3.12.16, runs 40519114224 / 40538710441 / 40540752238): both drifts came
@@ -124,7 +124,7 @@ jobs:
         # the FOR-1618 PR body.
         run: uv run --no-sync pytest -m unit -q --maxfail=1 --disable-warnings -n logical --dist loadfile --durations=60 --durations-min=1.0
 
-      # Teeth for tests/test_subprocess_env_hygiene.py at the regime that bit:
+      # Teeth for tests/repo/test_subprocess_env_hygiene.py at the regime that bit:
       # a test that re-syncs .venv from uv.lock swaps the CPU wheel above for
       # the CUDA build (MEASURED 2026-09-28, FOR-1618: three two-worker runs
       # died in cold-import children mid-reinstall). If torch is no longer the

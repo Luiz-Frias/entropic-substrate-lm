@@ -97,7 +97,7 @@ class ReviewFindingStatus(StrEnum):
 # sorted(CLAUSE_STATUS) into a caller-visible error. Measured 2026-10-06 at this
 # commit: sorted(frozenset(ClauseStatus)) prints
 # [<ClauseStatus.FAIL: 'FAIL'>, ...] where the plain-str set prints ['FAIL', ...];
-# tests/test_d1_verdict_v2.py pins the message.
+# tests/unit/ladder/file/test_d1_verdict_v2.py pins the message.
 CLAUSE_STATUS: Final[frozenset[str]] = frozenset(member.value for member in ClauseStatus)
 VERDICTS: Final[frozenset[str]] = frozenset(
     {"SUPPORTED", "NOT_SUPPORTED", "PRACTICALLY_NULL", "INCONCLUSIVE", "VALID_NEGATIVE", "RETIRED"}

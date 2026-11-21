@@ -410,7 +410,7 @@ class LanguageModel(nn.Module):
             #
             # Called through `__call__` (not `.forward(...)`/`._encode(...)`)
             # so the module's forward hooks still fire on the injection path
-            # — tests/test_field_encoder.py's anti-leakage hook test reads
+            # — tests/unit/core/substrate/test_field_encoder.py's anti-leakage hook test reads
             # exactly that. The FP32 island around the softmax -> sqrt ->
             # lift step lives INSIDE `_encode` and is untouched by this
             # branch.

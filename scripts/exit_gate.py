@@ -30,7 +30,7 @@ SCOPE (this file): the typestate certificate core only —
 :data:`CertifyError` union, the :data:`Phase` FSM + :func:`to_submitted`, and
 :func:`runner_report_block_reason` (the deterministic BLOCKED predicate a
 future harness would need — ported here as a standalone function pinned by
-its own case-matrix test; see :mod:`tests.test_exit_gate`'s module docstring
+its own case-matrix test; see :mod:`tests.repo.test_exit_gate`'s module docstring
 for exactly what "parity" does and doesn't mean without a wired-in harness).
 Nothing in THIS file performs I/O or subprocess execution — that lives
 entirely in :mod:`run_exit_gate` (``scripts/run_exit_gate.py``), which imports
@@ -95,7 +95,7 @@ empirical, not theoretical (see this task's designNotes). Moving ``_brand``
 out of ``__init__`` closes exactly that hole: ``replace()`` cannot carry a
 field forward that ``__init__`` never accepted from it in the first place.
 Pinned by ``test_replace_can_no_longer_forge_a_certificate`` in
-``tests/test_exit_gate.py``.
+``tests/repo/test_exit_gate.py``.
 
 THE CEILING THIS DOES **NOT** CLOSE, named rather than left implicit: anyone
 willing to replicate :func:`_mint_certificate`'s own technique —
@@ -158,7 +158,7 @@ __all__ = [
 # the TS reference (`^[0-9a-f]{40}$` under JS semantics, where `$` matches only
 # the true end of input) rejects it — a fail-OPEN divergence in the exact
 # canonical-SHA check this gate exists to enforce. Round-1 review finding;
-# regression cases pinning this boundary live in tests/test_exit_gate.py.
+# regression cases pinning this boundary live in tests/repo/test_exit_gate.py.
 _FULL_SHA_RE: Final = re.compile(r"^[0-9a-f]{40}\Z")
 
 
@@ -288,12 +288,12 @@ def _mint_certificate(*, cmd: str, certified_tip: str, tail_digest: str) -> Exit
 # ───────────────────────────────────────────────────────────── CertifyError ───
 # Closed union — every way certification can fail, in precedence order:
 # MISSING_EVIDENCE > NONZERO_EXIT > STALE_TIP > DIRTY_TREE > EMPTY_TAIL (pinned
-# in tests/test_exit_gate.py). This is certify_exit_gate's OWN precedence; the
+# in tests/repo/test_exit_gate.py). This is certify_exit_gate's OWN precedence; the
 # report-path check below (runner_report_block_reason / _evidence_issue) is a
 # SEPARATE function with a different order between DIRTY_TREE and EMPTY_TAIL —
 # inherited verbatim from exit-gate.ts (certifyExitGate vs evidenceIssue) and
 # preserved deliberately, not normalized into agreement. See both precedence
-# tests in tests/test_exit_gate.py for the pinned pair.
+# tests in tests/repo/test_exit_gate.py for the pinned pair.
 @dataclass(frozen=True, slots=True)
 class MissingEvidence:
     kind: Literal["MISSING_EVIDENCE"] = field(default="MISSING_EVIDENCE", init=False)
@@ -440,7 +440,7 @@ def _evidence_issue(evidence: ExitGateEvidence, cert: RunnerCertShape, exit_cmd:
     # reason — a crash where both the TS reference (`FULL_SHA.test(tip || '')`,
     # JS coerces `undefined`/`null` to `''`) and the harness's PARITY-PIN copy
     # block cleanly. Pinned by the "evidence tip is null" case in
-    # tests/test_exit_gate.py's case matrix.
+    # tests/repo/test_exit_gate.py's case matrix.
     if (
         not _FULL_SHA_RE.match(evidence.tested_tip or "")
         or cert.certified_tip != evidence.tested_tip
@@ -459,7 +459,7 @@ def runner_report_block_reason(
     carries a behaviorally identical copy between ``PARITY-PIN`` markers, but
     that harness is not part of this repo (see this module's docstring), so
     there is no in-repo second copy to check live agreement against yet.
-    ``tests/test_exit_gate.py`` pins THIS function's behavior against a case
+    ``tests/repo/test_exit_gate.py`` pins THIS function's behavior against a case
     matrix transcribed from ``exit-gate.ts``'s own test — see that file's
     module docstring for the exact, non-overclaiming scope of what "parity"
     means today versus what it would mean once a harness exists here.

@@ -31,7 +31,7 @@ stale. This is why ``n_seeds`` is written with :meth:`~mlflow.tracking.
 MlflowClient.set_tag`, not :meth:`~mlflow.tracking.MlflowClient.log_param`:
 real MLflow enforces WRITE-ONCE semantics on params server-side (re-logging
 a param with a value that differs from what's already stored raises
-``MlflowException``; ``tests/test_sinks.py``'s ``FakeMlflowClient`` enforces
+``MlflowException``; ``tests/unit/ladder/capture/reader/test_sinks.py``'s ``FakeMlflowClient`` enforces
 the identical contract). A parent that EXISTS, is STALE, and CANNOT BE
 UPDATED is a third state this module's invariant never contemplated — and
 it is worse than absence, because it is silent. Tags (like the metrics
@@ -57,7 +57,7 @@ PARENT_TAG = "aggregate.is_parent"
 # Mirrors `entropic_substrate.cli._CONFIG_HASH_RE` exactly: the shape
 # `entropic_substrate.ladder.capture.reader.sinks.config_hash()` always produces (12 lowercase hex
 # chars). fullmatch, not match/`$`-anchored — MEASURED regression pinned in
-# tests/test_cli_charts.py for the cli.py twin of this contract: `re.match`'s
+# tests/unit/composition/entrypoints/test_cli_charts.py for the cli.py twin of this contract: `re.match`'s
 # trailing "$" also matches immediately before a single trailing "\n", so
 # `re.match` alone accepted "deadbeefcafe\n". `fullmatch` has no such carve-out.
 _CONFIG_HASH_RE = re.compile(r"^[0-9a-f]{12}$")
@@ -171,7 +171,7 @@ def aggregate(
 
         # Retroactive nesting: adopt every child under the now-complete parent.
         #
-        # VERIFIED (tests/test_mlflow_aggregate.py::
+        # VERIFIED (tests/unit/ladder/capture/reader/test_mlflow_aggregate.py::
         # test_retroactive_parent_tag_nests_in_the_real_mlflow_ui), not
         # assumed: against a real (sqlite-backed, local) mlflow.tracking
         # store, (a) mlflow.entities.RunInfo carries no separate

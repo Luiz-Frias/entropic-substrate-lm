@@ -9,10 +9,10 @@
 #      suite against it (real localhost tracking server, real Cloudflare R2
 #      artifacts — never MinIO), then tears the stack down BEFORE phase 2
 #      starts.
-#   2. tests/test_mlflow_allowed_hosts.py — self-contained (its own
+#   2. tests/live/test_mlflow_allowed_hosts.py — self-contained (its own
 #      module-scoped fixture owns a SEPARATE compose stack, own project
 #      name, own teardown).
-#   3. tests/test_caddy_auth.py (p4) — likewise self-contained, its own THIRD
+#   3. tests/live/test_caddy_auth.py (p4) — likewise self-contained, its own THIRD
 #      compose stack (`--profile proxy`, so it alone includes the caddy
 #      service), own project name, own teardown. Proves the Caddy-fronted
 #      auth path this script's own live gate is the only thing that
@@ -98,7 +98,7 @@ fi
 # than extending it (verified empirically against the pinned image), and this
 # script reaches its own mlflow container at localhost:<ephemeral port> — so a
 # Railway-domain value would silently 403 every integration test below, on one
-# developer's machine and nobody else's. tests/test_mlflow_allowed_hosts.py
+# developer's machine and nobody else's. tests/live/test_mlflow_allowed_hosts.py
 # boots a SEPARATE, short-lived stack to exercise the allowlist instead.
 #
 # EMPTY EXPORT, NOT `unset` — the intuitive fix does not work. podman-compose
@@ -113,25 +113,25 @@ fi
 #   process env = "" (empty)        -> UNSET_DEFAULT      (empty wins)
 #
 # An empty EXPORTED value outranks .env and lets compose.yaml's `:-` default
-# apply; `unset` does not. Pinned by tests/test_run_container_test_config.py.
+# apply; `unset` does not. Pinned by tests/repo/test_run_container_test_config.py.
 export MLFLOW_ALLOWED_HOSTS=""
 export MLFLOW_CORS_ALLOWED_ORIGINS=""
 
 # Project identity — derivation EXTRACTED to scripts/derive_compose_project.sh
 # (p5) so its own runtime behaviour (same worktree, same second, two
 # DIFFERENT project names) is directly testable by invoking that file twice
-# as a subprocess (tests/test_derive_compose_project.py), which a grep of
+# as a subprocess (tests/repo/test_derive_compose_project.py), which a grep of
 # THIS script's source text never could. Sets PROJECT_FAMILY (stable per
-# worktree — the identity tests/helpers.py's assert_no_foreign_mlflow_stack
+# worktree — the identity tests/support/helpers.py's assert_no_foreign_mlflow_stack
 # uses to recognise "another run of mine") and PROJECT (PROJECT_FAMILY plus
 # per-run entropy — defect #1, see that script's own header for the
 # measurement and the retraction of the earlier "NOT $$ either" reasoning).
 #
 # Both exported, not just local vars: MLFLOW_COMPOSE_PROJECT so
-# tests/test_mlflow_live.py's own `podman compose -p ...` calls (the
+# tests/live/test_mlflow_live.py's own `podman compose -p ...` calls (the
 # mid-run mlflow-kill test) target the SAME project this script brought up
 # instead of guessing; MLFLOW_COMPOSE_PROJECT_FAMILY so
-# tests/test_mlflow_allowed_hosts.py and tests/test_caddy_auth.py's own
+# tests/live/test_mlflow_allowed_hosts.py and tests/live/test_caddy_auth.py's own
 # assert_no_foreign_mlflow_stack calls (phases 2 and 3) can pass `family=`
 # and get the twin-detecting, poll-before-refusing behaviour p5 added there —
 # see that function's docstring for why `family` is required for a project
@@ -240,7 +240,7 @@ settle_podman_vm() {
   # this gate declared "host settled" at load1 7.97/8 before phase 2 and
   # 7.58/8 before phase 3, then phase 3's single-worker MLflow (behind Caddy,
   # inside the 4-vCPU VM on this 8-core host) missed its clients' 10s read
-  # deadlines until retries exhausted — tests/test_caddy_auth.py red on its
+  # deadlines until retries exhausted — tests/live/test_caddy_auth.py red on its
   # zero-failed-writes assertion. Starting a phase at 95-99.6% of saturation
   # is not a settled machine; the healthy measurement above (29.64s at load1
   # 0.86) had real headroom, not boundary compliance. cores/2 demands that
@@ -384,18 +384,18 @@ podman ps
 say "phase 1/3: running the main integration suite against ${MLFLOW_URL}..."
 export MLFLOW_TRACKING_URI="$MLFLOW_URL"
 export ENTROPIC_MLFLOW_TINY=1
-# --ignore: tests/test_mlflow_allowed_hosts.py is phase 2 and
-# tests/test_caddy_auth.py is phase 3 (p4), both run below AFTER this stack
+# --ignore: tests/live/test_mlflow_allowed_hosts.py is phase 2 and
+# tests/live/test_caddy_auth.py is phase 3 (p4), both run below AFTER this stack
 # is torn down — see the module header comment on why no two of the three
 # ever run concurrently. Without both ignores here, `-m integration` would
 # sweep phase 2 and phase 3's own modules into THIS pytest process, and their
 # fixtures would try to bring up a SECOND/THIRD live stack while phase 1's
 # is still up — assert_no_foreign_mlflow_stack() correctly refuses that
 # (MEASURED: this was the failure mode the first time
-# tests/test_caddy_auth.py was added without updating this ignore list).
+# tests/live/test_caddy_auth.py was added without updating this ignore list).
 PYTHONPATH=src uv run pytest -m integration -q --disable-warnings \
-  --ignore=tests/test_mlflow_allowed_hosts.py \
-  --ignore=tests/test_caddy_auth.py
+  --ignore=tests/live/test_mlflow_allowed_hosts.py \
+  --ignore=tests/live/test_caddy_auth.py
 
 # Tear the main stack down NOW, deliberately, rather than waiting for the
 # EXIT trap — phase 2 must never see this stack still up (see the module
@@ -407,8 +407,8 @@ cleanup_main_stack 0
 settle_podman_vm
 
 # Re-arm the EXIT trap to cover phase 2's AND phase 3's stacks — a BACKUP
-# net, not either phase's primary cleanup. Both tests/test_mlflow_allowed_hosts.py
-# and tests/test_caddy_auth.py own `down -v --remove-orphans` in their own
+# net, not either phase's primary cleanup. Both tests/live/test_mlflow_allowed_hosts.py
+# and tests/live/test_caddy_auth.py own `down -v --remove-orphans` in their own
 # pytest fixture's `finally`, which covers every normal Python-level exit
 # path (return, raised exception, KeyboardInterrupt — SIGINT's default
 # handler raises a catchable exception). What a `finally` block does NOT
@@ -436,13 +436,13 @@ cleanup_backup_stacks() {
 }
 trap cleanup_backup_stacks EXIT
 
-say "phase 2/3: running the host-allowlist integration suite (own compose stack, own project name — see tests/test_mlflow_allowed_hosts.py)..."
-PYTHONPATH=src uv run pytest tests/test_mlflow_allowed_hosts.py -m integration -q --disable-warnings
+say "phase 2/3: running the host-allowlist integration suite (own compose stack, own project name — see tests/live/test_mlflow_allowed_hosts.py)..."
+PYTHONPATH=src uv run pytest tests/live/test_mlflow_allowed_hosts.py -m integration -q --disable-warnings
 
 # Same cause as the phase-1 -> phase-2 seam above: phase 2's own fixture just
 # tore its stack down (down -v --remove-orphans, inside its `finally`), which
 # is precisely what makes the VM busiest right as phase 3 is about to start.
 settle_podman_vm
 
-say "phase 3/3: running the Caddy-fronted auth integration suite (own compose stack + --profile proxy, own project name — see tests/test_caddy_auth.py)..."
-PYTHONPATH=src uv run pytest tests/test_caddy_auth.py -m integration -q --disable-warnings
+say "phase 3/3: running the Caddy-fronted auth integration suite (own compose stack + --profile proxy, own project name — see tests/live/test_caddy_auth.py)..."
+PYTHONPATH=src uv run pytest tests/live/test_caddy_auth.py -m integration -q --disable-warnings

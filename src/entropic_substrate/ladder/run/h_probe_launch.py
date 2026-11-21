@@ -20,7 +20,7 @@ parse; a pair under a v3 or v4 manifest is refused by name, because pairs exist 
 class (every H0 launch file sealed on R2 is v3), re-render their own bytes and never compare
 equal to a v5 launch. Every launch built in-process renders v5, so the digest, the pod name
 (``<stage>-<class>-<digest prefix>``, the rule is unchanged) and the workspace of a freshly
-built launch moved; the frozen launch fixtures in ``tests/test_h_probe_launch.py`` were
+built launch moved; the frozen launch fixtures in ``tests/unit/ladder/run/test_h_probe_launch.py`` were
 re-frozen once with the old digests retracted in the test docstring (house rule 4).
 
 LAUNCH SCHEMA v4 (rung B, operator ruling 2026-10-27, "option B"). A launch is either
@@ -118,7 +118,7 @@ class _ExtensionSpec:
 
 # CLOSED registry, in canonical (registry) order. The env keys equal the consumer
 # constants ``ladder.capture.reader.sinks.MLFLOW_EXPERIMENT_ENV`` and
-# ``MLFLOW_SYSTEM_METRICS_ENV``; tests/test_h_probe_launch.py pins that equality
+# ``MLFLOW_SYSTEM_METRICS_ENV``; tests/unit/ladder/run/test_h_probe_launch.py pins that equality
 # and that "true" is a literal ``adapters.mlflow._system_metrics_logging_enabled``
 # accepts, so a rename on the consumer side cannot silently orphan a launch.
 EXTENSION_REGISTRY: Mapping[str, _ExtensionSpec] = MappingProxyType(

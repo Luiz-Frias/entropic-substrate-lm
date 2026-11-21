@@ -42,7 +42,7 @@ _NORM_EPS: float = 1e-12
 def _clamp_cosine(gram: torch.Tensor) -> torch.Tensor:
     """Clamp cosines into ``[-1, 1]``: fp32 unit-row dot products overshoot
     the bound by O(1e-7) (backend/summation-order dependent — see the two
-    load-bearing tests in ``tests/test_gram_penalty.py``), and a caller's
+    load-bearing tests in ``tests/unit/core/geometry/test_gram_penalty.py``), and a caller's
     ``arccos`` of ``1 + 1e-7`` is NaN. Extracted so the clamp itself is
     deterministically testable, independent of whichever BLAS backend's
     overshoot behaviour the composed ``normalized_gram`` path exhibits."""
@@ -96,7 +96,7 @@ def gram_frobenius_sq(gram_a: torch.Tensor, gram_b: torch.Tensor) -> torch.Tenso
     inputs by the time this function runs, so no CPU test can distinguish
     this wrapper's presence from its absence — see
     ``test_gram_primitives_are_fp32_finite_and_differentiable_under_bf16_autocast``
-    in ``tests/test_gram_penalty.py``, which passes either way. Retained per
+    in ``tests/unit/core/geometry/test_gram_penalty.py``, which passes either way. Retained per
     CLAUDE.md's non-negotiable geometry-numerics invariant (defense in depth
     against a caller that skips the ``.float()`` upstream, and against a
     CUDA autocast op-list that may differ from CPU's) — this is a coverage

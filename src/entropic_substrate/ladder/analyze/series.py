@@ -93,7 +93,7 @@ def _by_seed(paths: Sequence[str | Path], *, arm: str) -> dict[int, Path]:
     """``{seed: path}`` for one arm — raises on a same-arm duplicate seed
     rather than silently keeping the last path (a plain dict comprehension's
     failure mode: MEASURED regression, see
-    tests/test_analysis_series.py::test_pair_final_metrics_rejects_a_duplicate_seed_within_one_arm).
+    tests/unit/ladder/capture/reader/test_analysis_series.py::test_pair_final_metrics_rejects_a_duplicate_seed_within_one_arm).
     """
     by_seed: dict[int, Path] = {}
     for raw in paths:

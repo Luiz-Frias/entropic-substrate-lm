@@ -2,7 +2,7 @@
 
 ``entrypoints.cli`` keeps the thin ``cmd_embedding_geometry`` shell that owns the one
 machine-consumed ``print()`` (``--json``); everything else lives here. This module holds no
-``print()`` (the print ban in tests/test_observability_conformance.py allowlists only named
+``print()`` (the print ban in tests/repo/test_observability_conformance.py allowlists only named
 entry-point modules), so the computation returns the payload instead of printing it.
 """
 

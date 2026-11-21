@@ -1,12 +1,12 @@
 """The H analysis lanes of the entry-point CLI (FOR-1648, DN-1648-B; moved here by FOR-1608).
 
 ``eval h``, ``charts h`` and ``mlflow-aggregate h`` are optional nested sub-subparsers on the
-EXISTING host parsers, so the frozen top-level subcommand set (tests/test_cli_surface.py) is
+EXISTING host parsers, so the frozen top-level subcommand set (tests/unit/composition/entrypoints/test_cli_surface.py) is
 untouched. ``entrypoints.cli`` routes to the handlers below BEFORE any E gate (a tracking-URI
 check, an E input check), so an offline H aggregate never demands a server.
 
 Machine-consumed stdout is exactly ONE JSON document per invocation. This module holds no
-``print()`` (the print ban in tests/test_observability_conformance.py allowlists only named
+``print()`` (the print ban in tests/repo/test_observability_conformance.py allowlists only named
 entry-point modules): every handler takes the ``emit`` callable ``entrypoints.cli`` owns and
 hands its document to it. Every H module is imported inside the handlers: this module keeps no
 module-level import of ladder.analyze.h_*, matplotlib or mlflow.
@@ -50,7 +50,7 @@ def add_h_analysis_lanes(
     """The H analysis surface (FOR-1648, operator door ruling B, conductor DN-1648-B).
 
     Three optional nested sub-subparsers named ``h``, one on each EXISTING host parser, so
-    the frozen top-level subcommand set (tests/test_cli_surface.py) is untouched. Every
+    the frozen top-level subcommand set (tests/unit/composition/entrypoints/test_cli_surface.py) is untouched. Every
     option an ``h`` parser declares has a dest prefixed ``h_``, disjoint from every dest of
     its host: argparse writes a child's defaults over the parent's parsed values, so a
     shared dest would silently clobber a host option (MEASURED on 3.12:

@@ -417,7 +417,7 @@ def fig_e3_kappa_divergence_vs_loss_gap(
     # (e.g. ``'_child1'``) specifically to signal "exclude me from a
     # legend"; collecting every line unconditionally let that auto-name
     # reach the rendered legend as a real, garbage entry (MEASURED
-    # regression, see tests/test_analysis_charts.py::
+    # regression, see tests/unit/ladder/analyze/test_analysis_charts.py::
     # test_e3_kappa_divergence_vs_loss_gap_legend_excludes_the_unlabeled_zero_line).
     all_lines = [*kappa_ax.get_lines(), *gap_ax.get_lines()]
     labeled = [line for line in all_lines if not str(line.get_label()).startswith("_")]

@@ -44,7 +44,7 @@ swap is per phase, so a setup-time binding was closed by the call phase).
 MACHINE-CONSUMED STDOUT IS NOT LOGS: ``entropic_substrate.telemetry``'s
 ``final-eval`` subcommand prints a bare float that ``scripts/run_ladder.sh``
 parses via ``$( ) | float()``, and ``entropic_substrate.cli``'s ``eval
---json`` prints one JSON object parsed by ``tests/test_train_smoke.py``.
+--json`` prints one JSON object parsed by ``tests/e2e/test_train_smoke.py``.
 Both of those two call sites stay raw ``print()`` and never touch this
 module — a loguru prefix on either is a hard break, not a formatting nit.
 """

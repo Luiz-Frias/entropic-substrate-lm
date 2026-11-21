@@ -163,9 +163,9 @@ test:
 
 # Fast tier: the unit suite minus `slow`. The inner loop and the prek pre-commit
 # stage run this; `check`, the pre-push hook, CI and `ship-it` all run the full
-# `test` recipe above, and tests/test_suite_tiers.py pins that none of them
+# `test` recipe above, and tests/repo/test_suite_tiers.py pins that none of them
 # deselects `slow`.
-# MEASURED 2026-11-21 at main 8c1f0c13: `slow` covers tests/test_cold_import.py
+# MEASURED 2026-11-21 at main 8c1f0c13: `slow` covers tests/architecture/test_cold_import.py
 # (360 s) and 59 functions with a case at or above 5 s (633 s) out of 2,335
 # summed test-seconds.
 test-fast:
@@ -173,7 +173,7 @@ test-fast:
     PYTHONPATH=src uv run pytest -m "unit and not slow" -q --maxfail=1 --disable-warnings -n auto --dist loadfile
 
 # All tests (unit + integration). Stays `--dist loadfile` on purpose: the
-# integration files tests/test_caddy_auth.py and tests/test_mlflow_allowed_hosts.py
+# integration files tests/live/test_caddy_auth.py and tests/live/test_mlflow_allowed_hosts.py
 # bring up podman compose under ONE fixed project name, so any mode that splits a
 # file across workers (worksteal) can run both at once and collide. worksteal and
 # loadscope measured null for the unit suite anyway (FOR-1618 ledger).
@@ -283,7 +283,7 @@ container-build tag="entropic-substrate-lm:latest" platform="linux/amd64":
 
 # Build on a native amd64 Docker Build Cloud builder and push straight to GHCR
 # (the image never transits the local uplink; the context upload respects
-# .dockerignore — see tests/test_deploy_config.py's parity pin). Needs a
+# .dockerignore — see tests/repo/test_deploy_config.py's parity pin). Needs a
 # Docker Hub login (`docker login`) and the cloud-capable buildx from
 # docker/buildx-desktop; the OSS Homebrew buildx lacks the `cloud` driver.
 container-publish tag="ghcr.io/luiz-frias/entropic-substrate-lm:latest" builder="cloud-luizffrias-small-lang-model":
@@ -308,7 +308,7 @@ container-test:
 #
 #   prek pre-commit  `pytest -m "unit and not slow"`  no containers
 #   prek pre-push    `pytest -q`       no containers, AND
-#                                      tests/test_mlflow_live.py skipif's on
+#                                      tests/live/test_mlflow_live.py skipif's on
 #                                      MLFLOW_TRACKING_URI, so with no stack up
 #                                      every live test SILENTLY SKIPS —
 #                                      reporting success by testing nothing
@@ -328,7 +328,7 @@ container-test:
 # permanent squash-merge subject (`<title> (#N)`). That is how PRs #32/#33
 # landed code-fenced subjects that turned the pre-push gate red. Without it,
 # gt uses the first commit's subject — already generated under the rules by
-# `just stack`. Pinned by tests/test_pr_authoring.py.
+# `just stack`. Pinned by tests/repo/test_pr_authoring.py.
 
 # Gate (check + live container-test) then submit the Graphite stack as drafts,
 # holding the host suite lock (tests/suite_lock.py) across all three steps:

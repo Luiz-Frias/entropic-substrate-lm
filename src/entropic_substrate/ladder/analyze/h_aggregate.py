@@ -86,7 +86,7 @@ _WARMUP = "codec_warmup"
 _PREDICTION = "prediction"
 _COMPLETE_RESULT = "probe_workload_complete"
 # The scalar names of the step schema; pinned equal to the extractor's projection keys
-# by tests/test_h_aggregate.py (a schema fact, not a second formula).
+# by tests/integration/test_h_aggregate.py (a schema fact, not a second formula).
 _STEP_SCALARS = (
     "objective",
     "aggregate_norm",
@@ -107,7 +107,7 @@ class CodecHandoffEvidence:
     """What a verified codec hand-off tells the reader about one recipient (FOR-1692, D12).
 
     The fields are the ones ``ladder.run.codec_handoff.VerifiedHandoff`` carries, by the same
-    names; tests/test_h_codec_handoff.py pins the two field sets equal. The type is declared
+    names; tests/unit/ladder/run/test_h_codec_handoff.py pins the two field sets equal. The type is declared
     HERE and not imported from the run side because this reader never imports the hand-off
     member (the analysis reader must not pull in the training engine). The caller converts
     ``admit_codec_pair``'s result; this module only checks the recipient's telemetry against it.
@@ -381,7 +381,7 @@ def _check_step_scalars(row: dict[str, Any], phase: str, path: Path) -> None:
 
 
 # the one gap the reader admits; the predicate lives in h_elm_projection, this name is
-# pinned by tests/test_h_final_probe_checks.py against that module's mirror
+# pinned by tests/unit/ladder/analyze/test_h_final_probe_checks.py against that module's mirror
 _ZERO_MASS_GAP = ZERO_MASS_GAP
 
 

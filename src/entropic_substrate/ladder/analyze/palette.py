@@ -58,7 +58,7 @@ OKABE_ITO: dict[str, str] = {
 # had period lcm(8,4,8)=8, not the "more heads than 8 colors" case the
 # comment claimed to cover: head_style(8) reproduced head_style(0)'s triple
 # EXACTLY (color, linestyle, AND marker all identical — see
-# tests/test_analysis_palette.py::test_head_style_stays_distinct_across_the_real_e3_head_count).
+# tests/unit/ladder/analyze/test_analysis_palette.py::test_head_style_stays_distinct_across_the_real_e3_head_count).
 # This is not a hypothetical scale case — every real E1/E2/E3 config
 # (configs/e0-*.yaml, e1-*.yaml, e2.yaml, e3*.yaml) pins n_heads: 12, so
 # heads 8-11 were complete visual clones of heads 0-3 on every real E3 run.

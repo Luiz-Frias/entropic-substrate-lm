@@ -422,7 +422,7 @@ def _e15_prereg_preflight(cfg: Config, *, tiny: bool) -> int:
     SANITY ONLY, same posture as :func:`_anchored_arm_preflight`: the check is
     "a registration is committed", read from ``config.E15_PREREGISTRATIONS``
     (the runtime half of the gate — the training image carries no ``docs/``,
-    so the file itself is CI's half to pin, tests/test_execution_gate.py).
+    so the file itself is CI's half to pin, tests/unit/composition/entrypoints/test_execution_gate.py).
     ``--tiny`` runs pass ungated: the capture lane excludes ``-tiny`` runs by
     construction, so a tiny smoke cannot enter a confirmatory set.
     """
@@ -557,7 +557,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
         "gate_usage": result.gate_fraction,
     }
     if args.json:
-        # MACHINE-CONSUMED STDOUT, NOT LOGS: tests/test_train_smoke.py reads
+        # MACHINE-CONSUMED STDOUT, NOT LOGS: tests/e2e/test_train_smoke.py reads
         # this exact line back via json.loads(capsys...out.strip()...[-1]).
         # Stays raw print(), never routed through this module's sinks — see
         # entropic_substrate.logging's module docstring.
@@ -781,7 +781,7 @@ def cmd_charts(args: argparse.Namespace) -> int:
         # main() catches no bare ValueError, so this used to reach the
         # operator as an unhandled traceback instead of the controlled
         # exit-2 idiom every OTHER input-validation refusal here uses (see
-        # tests/test_cli_charts.py::
+        # tests/unit/composition/entrypoints/test_cli_charts.py::
         # test_charts_with_a_duplicate_seed_within_one_e1_arm_is_a_controlled_refusal).
         logger.error(f"charts: {exc}")
         return 2
@@ -825,7 +825,7 @@ def cmd_charts(args: argparse.Namespace) -> int:
         if not _CONFIG_HASH_RE.fullmatch(args.config_hash):
             # fullmatch, not match: re.match's trailing "$" anchor matches
             # end-of-string OR just before a SINGLE trailing "\n" — MEASURED
-            # regression, see tests/test_cli_charts.py::
+            # regression, see tests/unit/composition/entrypoints/test_cli_charts.py::
             # test_charts_with_a_trailing_newline_on_config_hash_is_a_controlled_refusal
             # (a value like "deadbeefcafe\n" — an unstripped $(cat file) or
             # an env var with a trailing newline — satisfied .match() despite
@@ -872,8 +872,8 @@ def cmd_embedding_geometry(args: argparse.Namespace) -> int:
     return 0
 
 
-# Re-exported under their historical names: tests/test_embedding_geometry.py takes both
-# from this module (tests/test_cli_surface.py pins them).
+# Re-exported under their historical names: tests/unit/ladder/analyze/test_embedding_geometry.py takes both
+# from this module (tests/unit/composition/entrypoints/test_cli_surface.py pins them).
 _init_table_cache_key = init_table_cache_key
 _cached_reconstruct_init_table = cached_reconstruct_init_table
 
