@@ -231,7 +231,7 @@ refusals, param reporting. Open (PR #74, this branch, not yet merged): the
 (`train.py`'s `_field_loss_terms`, folded into the backward `total` at the
 same seam `geometry/gram.py`'s Gram penalty uses, NOT `aux_loss`) +
 frozen-field mode (`FieldEncoder`'s `field_mode="frozen"` /
-`field_ckpt_path`, guard-teeth in `tests/test_field_calibration.py`) — CE-only
+`field_ckpt_path`, guard-teeth in `tests/unit/kernel/runtime/test_field_calibration.py`) — CE-only
 telemetry (`field_ce`) at this stage, not yet the fuller Brier/ECE/entropy/
 top-1 surface. Landed (FOR-924, this branch): H and P arm variants sharing
 one `p_φ` — `field_state: Literal["sqrt_prob","prob","hidden"]` in

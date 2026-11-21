@@ -346,7 +346,7 @@ Amendment to the phases table: a `vehicle` column (P1, P3a, P3b, P3c: one cascad
 each, a door or design judgment; P2 and P4: mechanical, one lane or hand-authored under the
 measured band; P5, P6: one lane plus the conductor's re-pin; P7: one lane), and a `hub owner`
 column naming the single stack that may touch `pyproject.toml`, `uv.lock`, `.importlinter`,
-`platform.toml`, `tests/test_identity_epoch.py` and `.pre-commit-config.yaml` in each wave.
+`platform.toml`, `tests/unit/core/observation/test_identity_epoch.py` and `.pre-commit-config.yaml` in each wave.
 P1 declares all seven members up front so the root `pyproject.toml` and the lockfile are touched
 once. P1 also updates the worktree-create hook to `uv sync --all-packages`, since a fresh
 worktree with one package root installed fails the member gates with errors that look like base

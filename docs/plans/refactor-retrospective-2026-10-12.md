@@ -109,10 +109,10 @@ Horizon sentence one, clause by clause [M, part B §D.1]:
 
 | clause | local evidence at 65542d4 | remote evidence | unproven |
 | --- | --- | --- | --- |
-| causal encoder, predicted latent, text decoder | `tests/test_sentence_model.py`, `tests/test_sentence_objective.py`, tracer `composition/wiring/h_tiny_tracer.py` | both carriers passed prediction step 1 at solver budget 64 on H100, 2026-09-28 | no run completed the path end to end |
-| generates multiple continuations | `tests/test_sentence_rollout.py` | none | no captured generation from a trained model |
-| without future target latents | the two tests above plus `tests/test_predictive_state_state.py` | none | no causality audit on a trained checkpoint |
-| survives checkpoint/resume | `tests/test_sentence_checkpoint.py`, `tests/test_sentence_runner.py` | never exercised; the H100 retry was a fresh start | remote resume |
+| causal encoder, predicted latent, text decoder | `tests/unit/core/sentence/test_sentence_model.py`, `tests/unit/core/sentence/test_sentence_objective.py`, tracer `composition/wiring/h_tiny_tracer.py` | both carriers passed prediction step 1 at solver budget 64 on H100, 2026-09-28 | no run completed the path end to end |
+| generates multiple continuations | `tests/unit/core/sentence/test_sentence_rollout.py` | none | no captured generation from a trained model |
+| without future target latents | the two tests above plus `tests/unit/core/latent/test_predictive_state_state.py` | none | no causality audit on a trained checkpoint |
+| survives checkpoint/resume | `tests/unit/core/sentence/test_sentence_checkpoint.py`, `tests/unit/ladder/run/test_sentence_runner.py` | never exercised; the H100 retry was a fresh start | remote resume |
 | capture, fresh analysis, review, filing, gate | capture custody of failure bytes verified | none | no H capture, analysis, review, verdict or gate; `docs/verdicts/` holds E-series files only |
 
 What the probe waves measured: a3c74e on 2026-09-27 failed both arms at prediction step 1 with
