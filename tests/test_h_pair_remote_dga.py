@@ -105,6 +105,7 @@ def run_resumed(
     return json.loads((workspace / "worker/result.json").read_text()), workspace, observability
 
 
+@pytest.mark.slow
 def test_the_three_death_cases_build_the_right_request_and_the_resumed_pair_completes(
     tmp_path: Path, pair: Pair
 ) -> None:
@@ -256,6 +257,7 @@ def test_the_request_gate_refuses_every_resume_that_is_not_its_cells_own_receipt
 
 
 # ---------------------------------------------------------------------- the builder's refusals
+@pytest.mark.slow
 def test_a_resume_is_built_only_from_a_pause_a_stop_or_the_dh45_failure(
     tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -308,6 +310,7 @@ def test_a_resume_is_built_only_from_a_pause_a_stop_or_the_dh45_failure(
         )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("outcome", ["scientific_gap", "diagnostic_gap"])
 def test_a_post_training_gap_failure_is_registered_negative_evidence_never_a_resume_source(
     tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch, outcome: str
@@ -347,6 +350,7 @@ def test_a_post_training_gap_failure_is_registered_negative_evidence_never_a_res
     assert resumed.nonce == "2" * 64 and resumed.run_identity == request.run_identity
 
 
+@pytest.mark.slow
 def test_the_builder_refuses_a_v1_collection_a_reused_nonce_and_evidence_of_nothing(
     tmp_path: Path, pair: Pair
 ) -> None:
@@ -370,6 +374,7 @@ def test_the_builder_refuses_a_v1_collection_a_reused_nonce_and_evidence_of_noth
 
 
 # --------------------------------------------- the capstone: stop, resume, stitch with the proof
+@pytest.mark.slow
 def test_a_stopped_pair_resumes_and_the_host_verifies_the_handoff_its_resumed_lineage_needs(
     tmp_path: Path, pair: Pair
 ) -> None:

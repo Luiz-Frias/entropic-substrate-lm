@@ -1019,6 +1019,7 @@ def test_the_real_monitor_main_puts_its_events_on_the_substrate_stderr(tmp_path:
     assert completed.returncode == 1 and completed.stdout == ""
 
 
+@pytest.mark.slow
 def test_the_real_tracer_main_puts_its_line_on_the_substrate_stderr(tmp_path: Path) -> None:
     from tests.test_h_tiny_tracer import _foreign_capture, _remote
     from tests.test_sentence_profile import profile

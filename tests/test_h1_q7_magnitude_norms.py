@@ -210,6 +210,7 @@ def test_the_instrument_reads_magnitudes_not_a_constant() -> None:
     assert float(states.std()) > 0
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("cell", list(CELLS))
 def test_the_claims_hold_on_a_trained_saved_and_reloaded_state(cell: str, tmp_path: Path) -> None:
     mode, carrier = CELLS[cell]

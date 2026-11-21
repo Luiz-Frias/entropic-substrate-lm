@@ -31,7 +31,9 @@ SRC_ROOT = REPO_ROOT / "src" / "entropic_substrate"
 
 LANDED_ROOTS = ("kernel", "core", "ladder", "historical", "composition")
 
-pytestmark = pytest.mark.unit
+# MEASURED 2026-11-21 at main 8c1f0c13: 404 cases, 360 s of the unit suite's
+# 2,335 summed test-seconds, one interpreter start per module. Heavy tier.
+pytestmark = [pytest.mark.unit, pytest.mark.slow]
 
 _MARKER = "COLD_IMPORT_OK"
 

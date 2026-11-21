@@ -421,6 +421,7 @@ def _with_continuations(profile: HProfile, continuations: int) -> HProfile:
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("continuations", [2, 3])
 def test_object_floor_matches_a_real_tiny_object_worker_run(
     continuations: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

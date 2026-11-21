@@ -109,6 +109,7 @@ def _instrument(monkeypatch: pytest.MonkeyPatch) -> _Walks:
     return walks
 
 
+@pytest.mark.slow
 def test_final_leg_admits_each_artifact_root_with_one_fresh_walk(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

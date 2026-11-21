@@ -314,6 +314,7 @@ class TestSentinelModulesAreFileSingletonsAfterTheSweep:
     demonstrates the hazard (two distinct objects); this test is the guard
     that a real collision must never pass."""
 
+    @pytest.mark.slow
     def test_no_sentinel_module_file_is_double_registered_in_sys_modules(self) -> None:
         for name in _all_graph_modules():
             try:

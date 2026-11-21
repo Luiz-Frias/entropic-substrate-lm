@@ -50,6 +50,7 @@ def prepared(root: Path, *, pause: tuple[str, int] | None = None) -> tuple[Probe
     return request, worker
 
 
+@pytest.mark.slow
 def test_worker_runs_one_lineage_through_native_verification(tmp_path: Path) -> None:
     request, root = prepared(tmp_path)
     checkpoints = []
@@ -66,6 +67,7 @@ def test_worker_runs_one_lineage_through_native_verification(tmp_path: Path) -> 
     assert capture["diagnostic_roots"]
 
 
+@pytest.mark.slow
 def test_worker_pause_stops_before_generation_or_diagnostics(tmp_path: Path) -> None:
     paused, root = prepared(tmp_path, pause=("prediction", 2))
     result = execute_probe_request(paused, root)

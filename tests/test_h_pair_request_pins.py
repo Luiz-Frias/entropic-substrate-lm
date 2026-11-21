@@ -428,6 +428,7 @@ def with_failure(world: World, root: Path, **changes: Any) -> tuple[Path, dict[s
     return workspace, world.result | {"cells": cells}
 
 
+@pytest.mark.slow
 def test_the_disk_derivation_pins_each_cells_steps_failure_record_and_capture_lineage(
     honest: World, gapped: World, tmp_path: Path
 ) -> None:

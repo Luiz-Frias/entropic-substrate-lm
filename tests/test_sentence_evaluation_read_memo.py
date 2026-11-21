@@ -130,6 +130,7 @@ def test_a_hit_equals_an_independent_disk_read_and_is_the_remembered_object(
     assert hit == run.evaluation(run.artifacts[0], None)
 
 
+@pytest.mark.slow
 def test_without_a_memo_every_call_reads_every_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

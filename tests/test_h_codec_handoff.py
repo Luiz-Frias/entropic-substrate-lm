@@ -226,6 +226,7 @@ def finish(
 
 
 # --------------------------------------------------------------------------------- RED
+@pytest.mark.slow
 def test_recipient_trains_from_the_donor_warmup_and_matches_an_independent_recipient(
     tmp_path: Path,
 ) -> None:
@@ -651,6 +652,7 @@ def test_the_recipient_carries_the_donors_bytes_not_a_re_derivation(
 
 
 # ------------------------------------------------------------------- fresh-process resume
+@pytest.mark.slow
 def test_a_paused_handoff_recipient_resumes_in_a_fresh_engine_and_equals_an_uninterrupted_run(
     world: World,
 ) -> None:

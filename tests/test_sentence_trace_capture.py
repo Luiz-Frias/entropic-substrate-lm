@@ -20,6 +20,7 @@ from entropic_substrate.ladder.run.trace_capture import (
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("version", [1, 2])
 def test_portable_capture_rehydrates_a_complete_model_trace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: int
@@ -83,6 +84,7 @@ def test_portable_capture_rehydrates_a_complete_model_trace(
         )
 
 
+@pytest.mark.slow
 def test_capture_refuses_budgets_and_occupied_destinations(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -128,6 +130,7 @@ def test_capture_refuses_budgets_and_occupied_destinations(
         )
 
 
+@pytest.mark.slow
 def test_capture_reader_detects_a_missing_referenced_checkpoint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -167,6 +170,7 @@ def test_capture_reader_detects_a_missing_referenced_checkpoint(
         )
 
 
+@pytest.mark.slow
 def test_capture_includes_the_paused_generation_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -218,6 +222,7 @@ def test_capture_schema_vocabulary_moves_the_profile_and_keeps_every_receipt_nam
         assert name in schemas
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("old", ["h-generation-receipt-v1", "h-generation-receipt-v2"])
 def test_an_old_receipt_bound_to_the_run_is_refused_by_name_never_admitted_unread(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, old: str

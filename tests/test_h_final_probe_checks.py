@@ -182,6 +182,7 @@ def chain(tmp_path_factory: pytest.TempPathFactory) -> _Chain:
 
 
 class TestK1Chain:
+    @pytest.mark.slow
     def test_walks_past_a_checkpoint_receipt_back_to_the_stopped_receipt(
         self, chain: _Chain
     ) -> None:
@@ -306,6 +307,7 @@ def _staged(collected_run: Path, worker_root: Path, staging: Path) -> Path:
 
 
 class TestResumeRequestBuilder:
+    @pytest.mark.slow
     def test_operator_stop_then_built_resume_request_completes_the_same_lineage(
         self, tmp_path: Path
     ) -> None:

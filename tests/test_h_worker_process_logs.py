@@ -93,6 +93,7 @@ def _child_env() -> dict[str, str]:
     return scrubbed
 
 
+@pytest.mark.slow
 def test_a_real_child_process_stderr_carries_each_worker_line_exactly_once(tmp_path: Path) -> None:
     work = tmp_path / "child"
     work.mkdir()

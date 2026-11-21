@@ -46,6 +46,7 @@ def captured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Art
     return build_capture(tmp_path, monkeypatch)
 
 
+@pytest.mark.slow
 def test_custody_does_not_call_native_admission_or_weaken_it(
     captured: tuple[Path, ArtifactIdentity], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -70,6 +71,7 @@ def test_custody_does_not_call_native_admission_or_weaken_it(
         trace_capture.inspect_model_custody(root, artifact, **LIMITS)
 
 
+@pytest.mark.slow
 def test_public_custody_command_names_its_limited_scope(
     tmp_path: Path, captured: tuple[Path, ArtifactIdentity], capsys: pytest.CaptureFixture[str]
 ) -> None:

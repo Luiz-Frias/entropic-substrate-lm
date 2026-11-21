@@ -114,6 +114,7 @@ def test_pause_at_an_unsealed_step_is_not_silently_ignored(
     assert not list((tmp_path / "run").iterdir())
 
 
+@pytest.mark.slow
 def test_public_generation_pause_resume_and_inspection(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

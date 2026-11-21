@@ -38,6 +38,7 @@ def lineage(tmp_path: Path) -> Lineage:
     return template.profile, template.source_root, output, trained.receipt
 
 
+@pytest.mark.slow
 def test_diagnostic_follows_the_actual_checkpoint_and_retains_controls(lineage: Lineage) -> None:
     profile, source, root, training = lineage
     rng = torch.get_rng_state().clone()
@@ -67,6 +68,7 @@ def test_diagnostic_follows_the_actual_checkpoint_and_retains_controls(lineage: 
     torch.testing.assert_close(torch.get_rng_state(), rng, atol=0, rtol=0)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("field", "error"),
     [
@@ -129,6 +131,7 @@ def test_insufficient_lag_population_keeps_a_failure_receipt(lineage: Lineage) -
     assert not list(root.glob("*-span-diagnostics.json"))
 
 
+@pytest.mark.slow
 def test_outer_receipt_preserves_the_registered_replay_tolerance(lineage: Lineage) -> None:
     profile, source, root, training = lineage
     artifact = run_span_diagnostics(

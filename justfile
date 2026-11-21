@@ -161,6 +161,17 @@ test:
     @echo "→ Running unit tests..."
     PYTHONPATH=src uv run pytest -m unit -q --maxfail=1 --disable-warnings -n auto --dist loadfile
 
+# Fast tier: the unit suite minus `slow`. The inner loop and the prek pre-commit
+# stage run this; `check`, the pre-push hook, CI and `ship-it` all run the full
+# `test` recipe above, and tests/test_suite_tiers.py pins that none of them
+# deselects `slow`.
+# MEASURED 2026-11-21 at main 8c1f0c13: `slow` covers tests/test_cold_import.py
+# (360 s) and 59 functions with a case at or above 5 s (633 s) out of 2,335
+# summed test-seconds.
+test-fast:
+    @echo "→ Running fast unit tier (unit and not slow)..."
+    PYTHONPATH=src uv run pytest -m "unit and not slow" -q --maxfail=1 --disable-warnings -n auto --dist loadfile
+
 # All tests (unit + integration). Stays `--dist loadfile` on purpose: the
 # integration files tests/test_caddy_auth.py and tests/test_mlflow_allowed_hosts.py
 # bring up podman compose under ONE fixed project name, so any mode that splits a
@@ -295,7 +306,7 @@ container-test:
 # `container-test` is a HARD dependency, not a courtesy. Nothing else in this
 # repo executes the live MLflow path:
 #
-#   prek pre-commit  `pytest -m unit`  no containers
+#   prek pre-commit  `pytest -m "unit and not slow"`  no containers
 #   prek pre-push    `pytest -q`       no containers, AND
 #                                      tests/test_mlflow_live.py skipif's on
 #                                      MLFLOW_TRACKING_URI, so with no stack up
