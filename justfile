@@ -301,27 +301,30 @@ container-test:
 # Publish
 # ---------------------------------------------------------------------------
 
-# Full pre-flight, then submit the whole Graphite stack as drafts.
+# Publish the Graphite stack as drafts. Two recipes since 2026-11-21:
 #
-# `container-test` is a HARD dependency, not a courtesy. Nothing else in this
-# repo executes the live MLflow path:
+#   ship-it        static checks, then `gt submit` (whose pre-push hook runs
+#                  tests/unit + tests/e2e in full and reads the post-commit
+#                  record), then `post-ship`. NO containers.
+#   ship-it-full   `just check` + the live `container-test` gate, then submit,
+#                  then `post-ship`.
 #
-#   prek pre-commit  `pytest -m "unit and not slow"`  no containers
-#   prek pre-push    `pytest -q`       no containers, AND
-#                                      tests/live/test_mlflow_live.py skipif's on
-#                                      MLFLOW_TRACKING_URI, so with no stack up
-#                                      every live test SILENTLY SKIPS —
-#                                      reporting success by testing nothing
-#   CI               `just check`      no containers
+# Nothing but `container-test` executes the live MLflow path: the tests under
+# tests/live skipif on MLFLOW_TRACKING_URI, so with no stack up they SILENTLY
+# SKIP, reporting success by testing nothing. That is exactly how the live
+# gate went red at main (deps commit 81bd4dd, mlflow -> mlflow-skinny) and
+# stayed red under a fully green CI. See CLAUDE.md's House rules.
 #
-# Because those tests SKIP rather than FAIL, an ungated push is green while
-# covering nothing. That is exactly how the live gate went red at main (deps
-# commit 81bd4dd, mlflow -> mlflow-skinny) and stayed red under a fully green
-# CI. See CLAUDE.md's House rules.
-#
-# Deliberately NOT provided: a `ship-it-fast` that skips the live gate. An
-# official bypass is how a gate stops being a gate. If a branch genuinely
-# cannot run containers, call `gt submit` directly and own that choice.
+# RETRACTED 2026-11-21 (operator ruling): this block used to say "Deliberately
+# NOT provided: a `ship-it-fast` that skips the live gate. An official bypass
+# is how a gate stops being a gate." The slim recipe now exists, and what keeps
+# it from being a bypass is mechanical, not a habit: scripts/ship_scope.py
+# reads the stack's diff and REFUSES (exit 3, naming the files and
+# `just ship-it-full`) when it touches compose, the image definition, the
+# dependency files, the MLflow adapter or sinks, the container gate, or
+# tests/live. Pinned by tests/repo/test_ship_scope.py and
+# tests/repo/test_suite_tiers.py. Not covered by any local recipe: a
+# dependency PR opened by a bot never passes through either one.
 
 # Deliberately NO `--ai`: it would REGENERATE the PR title from the diff,
 # blind to gitlint/commitizen, and the PR title is what GitHub bakes into the
@@ -330,13 +333,30 @@ container-test:
 # gt uses the first commit's subject — already generated under the rules by
 # `just stack`. Pinned by tests/repo/test_pr_authoring.py.
 
-# Gate (check + live container-test) then submit the Graphite stack as drafts,
-# holding the host suite lock (tests/suite_lock.py) across all three steps:
-# their suites run as this holder's descendants and pass through, while any
-# other session's `-n` suite or ship-it refuses with exit 75 instead of racing.
-# MEASURED 2026-10-30: a bare pre-push suite flaked a 10 s watchdog deadline at
-# swap 96% / load 22 beside another worktree's suite; alone it passed 3/3.
-# Steps are inside the held command, not recipe prerequisites, because
-# prerequisites run before the body and so outside the lock.
+# Both recipes hold the host suite lock (tests/suite_lock.py) across every
+# step: their suites run as this holder's descendants and pass through, while
+# any other session's `-n` suite or ship-it refuses with exit 75 instead of
+# racing. MEASURED 2026-10-30: a bare pre-push suite flaked a 10 s watchdog
+# deadline at swap 96% / load 22 beside another worktree's suite; alone it
+# passed 3/3. Steps are inside the held command, not recipe prerequisites,
+# because prerequisites run before the body and so outside the lock.
 ship-it:
-    uv run python tests/suite_lock.py ship-it -- bash -c 'just check && just container-test && gt submit --stack --no-edit --no-interactive --always'
+    uv run python tests/suite_lock.py ship-it -- bash -c 'uv run python scripts/ship_scope.py && just fmt-check lint typecheck lint-imports && gt submit --stack --no-edit --no-interactive --always && just post-ship'
+
+# The full gate: CI-parity check and the live MLflow stack, then submit. Run it
+# whenever `just ship-it` refuses, and on demand for infra work.
+ship-it-full:
+    uv run python tests/suite_lock.py ship-it-full -- bash -c 'just check && just container-test && gt submit --stack --no-edit --no-interactive --always && just post-ship'
+
+# After the submit: the folders the push did not run, slow tests included, then
+# the dead-code WARNING report (never fails; candidates for a later refactor).
+# A failure here is reported after the drafts are already up, by design.
+post-ship:
+    uv run python scripts/suite_stages.py run post-ship
+    uv run python scripts/dead_code_report.py
+
+# Run one stage of the suite by name (pre-commit, post-commit, pre-push,
+# post-ship). The stage table is scripts/suite_stages.py; the hooks call the
+# same entry, so this is exactly what a hook runs.
+test-stage stage:
+    uv run python scripts/suite_stages.py run {{ stage }}

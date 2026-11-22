@@ -1,3 +1,6 @@
 # scripts/
 
 - **Bulk path-reference rewriter:** `scripts/rewrite_path_refs.py` rewrites stale path references after files move. Point it at a mapping source (`--git-renames BASE HEAD` or `--mapping-json FILE`) and the trees to sweep; it is a dry run unless `--apply`, `--exclude GLOB` leaves sealed files stale, and `--check` exits 1 while stale references remain. Pinned by `tests/repo/test_rewrite_path_refs.py`.
+- **Suite stages:** `scripts/suite_stages.py` is the one table of which test folders each hook stage runs (`run <stage>`, `pre-commit`, `post-commit`, `pre-push`). Folder means kind, marker means cost. The `pre-commit` hook runs only the `tests/unit` folders the staged paths mirror (`unit_scope`; unclassified paths widen to the whole folder, `DEFERRED_PREFIXES` add nothing); pre-push runs the folder in full. Post-commit results are recorded by tree under the git common dir and pruned at push.
+- **Ship scope guard:** `scripts/ship_scope.py` exits 3 and names `just ship-it-full` when a stack touches the live stack; `INFRA_PATTERNS` is the list.
+- **Dead-code report:** `scripts/dead_code_report.py` prints a WARNING list of source modules no entrypoint reaches. It never fails; `just post-ship` runs it.
