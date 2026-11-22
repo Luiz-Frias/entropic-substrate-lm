@@ -90,6 +90,31 @@ def test_probe_fails_when_the_emitter_adds_a_second_unrelated_row(tmp_path: Path
     assert "2 rows" in result.detail
 
 
+def test_probe_fails_when_stderr_quotes_the_sentence_without_printing_the_line(
+    tmp_path: Path,
+) -> None:
+    # Review round 2 (PR 440). A handler-error dump from loguru quotes the
+    # record's message, so counting the sentence anywhere on stderr passed
+    # with no human line printed. Simulated here: the record goes out as a
+    # report (the human sink filters those out, the tape still records it)
+    # and a dump-shaped block naming the sentence is written to stderr.
+    import sys
+
+    def dumping(level: str, event: str, **fields: object) -> None:
+        sentence = smoke.render_of(ACTIVE)(event, **fields)
+        getattr(logger.bind(event=event, report=True, **fields), level)(sentence)
+        sys.stderr.write(
+            "--- Logging error in Loguru Handler #1 ---\n"
+            f"Record was: {{'message': {sentence!r}}}\n"
+            "--- End of logging error ---\n"
+        )
+
+    result = smoke.probe(ACTIVE, tmp_path / "tape.jsonl", emit=dumping)
+
+    assert not result.ok
+    assert "stderr" in result.detail
+
+
 def test_run_with_nothing_active_is_refused_not_green(capsys: pytest.CaptureFixture[str]) -> None:
     assert smoke.run("active", paths=()) == smoke.EXIT_NOTHING_EXAMINED
     assert "nothing" in capsys.readouterr().err

@@ -150,8 +150,14 @@ def _mismatch(rows: list[dict[str, object]], stderr: str, event: str, sentence: 
         return f"field(s) missing or changed on the tape: {lost}"
     if row.get("message") != sentence:
         return f"tape message is {row.get('message')!r}, expected {sentence!r}"
-    if stderr.count(sentence) != 1:
-        return f"stderr shows the sentence {stderr.count(sentence)} times, expected 1"
+    # The human sink prints one line that ENDS with the sentence. Counting the
+    # sentence anywhere passed on a loguru handler-error dump, which quotes the
+    # record's message with no line printed (review round 2, PR 440).
+    lines = stderr.splitlines()
+    if len(lines) != 1:
+        return f"stderr holds {len(lines)} lines, expected the 1 human line"
+    if not lines[0].endswith(f" | {sentence}"):
+        return f"stderr line is {lines[0]!r}, expected it to end with {sentence!r}"
     return ""
 
 
