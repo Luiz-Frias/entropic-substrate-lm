@@ -301,7 +301,7 @@ weakens; the kernel lifecycle FSM becomes a total transition function with `asse
 
 ### Four teeth that make it bind (three until 2026-11-01)
 
-1. `tests/test_identity_epoch.py` (or its per-member successor) pins the canonical digest of
+1. `tests/unit/core/observation/test_identity_epoch.py` (or its per-member successor) pins the canonical digest of
    `platform.toml` and of every `series.toml` beside the module-set digests it pins today, so a
    pin edit is a deliberate re-pin commit. Amended 2026-11-01: a `hypothesis` round trip proves
    the digest is stable under key reordering and whitespace and changes on any value edit.
@@ -353,7 +353,7 @@ measured bands in `pick-vehicle-by-size`: P1, P3a, P3b and P3c are one cascade-a
 (a door or a design judgment); P2 and P4 are mechanical and run as one lane or hand-authored
 under the measured band; P5 and P6 are one lane each plus the conductor's re-pin; P7 is one
 lane. Every hub file has one owning stack per wave: P1 owns `pyproject.toml`, `uv.lock`,
-`.importlinter`, `platform.toml`, `tests/test_identity_epoch.py` and the
+`.importlinter`, `platform.toml`, `tests/unit/core/observation/test_identity_epoch.py` and the
 `.pre-commit-config.yaml` ask, and declares all seven members up front so the root manifest and
 the lockfile are touched once; later phases add to their own member only. P1 also updates the
 worktree-create hook to `uv sync --all-packages`, because a fresh worktree with one package root

@@ -669,7 +669,7 @@ def evaluated_samples_from_manifest(manifest: object) -> tuple[int, ...]:
 
 
 # The one gap the reader admits; mirrors h_aggregate._ZERO_MASS_GAP (private there), pinned
-# equal by tests/test_h_final_probe_checks.py::TestK6.
+# equal by tests/unit/ladder/analyze/test_h_final_probe_checks.py::TestK6.
 _ZERO_MASS_GAP = "zero_importance_weight_mass"
 
 

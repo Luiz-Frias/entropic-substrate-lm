@@ -17,7 +17,7 @@ Three vocabulary decisions are recorded here because the set is a frozen door:
 
 * ``sink.finish.end`` carries ``settled`` (did the metric drain finish inside its
   budget) and ``stranded``, NOT the ``drained`` the brief first named. The
-  unmodified ``tests/test_mlflow_async_sink.py`` counts stderr lines containing
+  unmodified ``tests/unit/ladder/capture/ports/test_mlflow_async_sink.py`` counts stderr lines containing
   ``drain``, and under the pre-existing conftest sink defect those counts are
   taken over loguru's error dump, so a ``drained=`` field would shift them.
   ``settled`` is the ratified name; renaming it back is a vocabulary amendment
@@ -35,7 +35,7 @@ Three vocabulary decisions are recorded here because the set is a frozen door:
 
 Adapters under ``ladder.capture`` cannot import this module (layer edge
 ``capture -> run`` is not admitted), so they emit the literal names below;
-``tests/test_h_worker_log_lines.py`` pins that the constant and the observed
+``tests/unit/ladder/run/test_h_worker_log_lines.py`` pins that the constant and the observed
 set of emitted ``event`` names are equal in both directions.
 """
 

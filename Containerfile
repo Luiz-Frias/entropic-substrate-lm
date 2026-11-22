@@ -45,7 +45,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.6@sha256:43cb71695fcad1516c2fbe0f56e500184
 # torch itself already sits in that site-packages, put there by the base
 # image's own build — so the opt-out is deliberate, not a workaround.
 # ENV form rather than a per-RUN flag so BOTH install layers below inherit
-# it and cannot drift apart. Pinned by tests/test_deploy_config.py.
+# it and cannot drift apart. Pinned by tests/repo/test_deploy_config.py.
 ENV UV_BREAK_SYSTEM_PACKAGES=1
 
 # Dependency layer: export the audited runtime + deploy graph from uv.lock,

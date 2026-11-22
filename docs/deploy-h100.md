@@ -163,7 +163,7 @@ or remote worker, or be launched, and with which cost guard, is one constant tab
 `ladder/run/admission.py`; it admits `local_tiny` on the local worker at every stage and `remote_tiny`
 on the remote worker and at launch only at H0 with `host_watchdog_tiny_only`, and refuses `pilot` and
 `confirmatory` everywhere. `H0ProbeLaunch` asks the port, the five reader-identity members that gate a
-class still carry inline checks held to the same table by `tests/test_h_run_admission_sites.py` until
+class still carry inline checks held to the same table by `tests/unit/ladder/run/test_h_run_admission_sites.py` until
 the conductor's re-pin routes them through it, and rung B replaces the constant with a sealed
 `RunAuthority` artifact under LAUNCH SCHEMA v4.
 

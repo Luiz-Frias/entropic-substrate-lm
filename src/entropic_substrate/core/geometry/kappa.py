@@ -27,7 +27,7 @@ Formulas follow the vendor pattern of ``geoopt`` (Apache-2.0),
         arXiv:1911.08411.
 
 ``geoopt.Stereographic`` is used as a *test oracle* only (see
-``tests/test_kappa_geometry.py``); it is not a runtime dependency of the model.
+``tests/unit/core/geometry/test_kappa_geometry.py``); it is not a runtime dependency of the model.
 """
 
 from __future__ import annotations

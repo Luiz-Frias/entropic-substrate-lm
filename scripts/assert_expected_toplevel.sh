@@ -16,7 +16,7 @@
 # for the SAME reason derive_compose_project.sh was: this makes the guard's
 # own runtime behaviour — refuses on a mismatch, permits a match, permits an
 # unset expectation — directly testable in isolation
-# (tests/test_run_container_test_config.py), with NO dependency on .env,
+# (tests/repo/test_run_container_test_config.py), with NO dependency on .env,
 # AWS credentials, or podman. A grep of run_container_test.sh's source text
 # could prove a token is present; it could not prove the guard actually
 # fires only when it should.
@@ -26,7 +26,7 @@
 # has nothing external to pin against and this degrades to a no-op — the
 # same best-effort posture every other guard in this script takes when it
 # cannot check something (see assert_no_foreign_mlflow_stack's own probe
-# tolerance in tests/helpers.py).
+# tolerance in tests/support/helpers.py).
 #
 # DISTINCT EXIT CODE (3, not the generic preflight 1 run_container_test.sh's
 # AWS/S3 checks use) so a caller scripting around this gate can tell "wrong

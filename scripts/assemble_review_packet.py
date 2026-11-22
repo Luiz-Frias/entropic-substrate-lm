@@ -43,7 +43,7 @@ Layout (FOR-1609): the specs, the preregistration prose and ``RUNGS`` live in
 the sibling ``review_packet_rungs.py``; this file keeps the engine and
 ``main()`` and re-exports the sibling's names, so ``_MOD.RUNGS`` and friends
 resolve exactly as before. ``scripts/`` is not a package (no ``__init__.py``)
-and ``tests/test_review_packet.py`` loads this file with
+and ``tests/unit/ladder/capture/reader/test_review_packet.py`` loads this file with
 ``spec_from_file_location``, which does NOT put ``scripts/`` on ``sys.path``;
 a bare ``import review_packet_rungs`` would therefore work under
 ``python scripts/assemble_review_packet.py`` (the interpreter prepends the
@@ -83,7 +83,7 @@ from review_packet_rungs import (  # noqa: E402 -- needs the sys.path entry abov
     RungSpec,
 )
 
-# Re-exported for the file-path loader (tests/test_review_packet.py reads these
+# Re-exported for the file-path loader (tests/unit/ladder/capture/reader/test_review_packet.py reads these
 # off the loaded module); the engine below uses them directly as well.
 __all__ = ["BANNED_BASE", "RUNGS", "ArmSpec", "RungSpec", "main"]
 
@@ -217,7 +217,7 @@ _PACKET_READER_EXCLUDED_FUNCTIONS = {
 _PACKET_READER_EXCLUDED_IMPORT_PREFIXES = (
     # p13-sweep, B2 row 7 (P12-D5 cut, E-4 door): the two entries this tuple
     # carried at the old prefix are rewritten to their landed addresses.
-    # They are pinned verbatim by tests/test_cli_surface.py's
+    # They are pinned verbatim by tests/unit/composition/entrypoints/test_cli_surface.py's
     # _FROZEN_LITERAL_SITES_PATH.
     "entropic_substrate.ladder.capture.reader.d1_",
     "entropic_substrate.ladder.capture.records.d1_",

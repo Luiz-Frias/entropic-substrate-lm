@@ -100,7 +100,7 @@ just setup                   # tools + uv sync --all-groups + prek hooks
 just check                   # quality gate: fmt-check + lint + typecheck + unit tests + lint-imports (= CI)
 just test                    # unit tests only (CPU, <60s)
 just test-all                # unit + integration
-PYTHONPATH=src uv run pytest tests/test_kappa_geometry.py::test_name -m unit   # single test
+PYTHONPATH=src uv run pytest tests/unit/core/geometry/test_kappa_geometry.py::test_name -m unit   # single test
 just train exp=e1-fisher     # exp ∈ EXPERIMENTS in kernel/runtime/config.py; --tiny for a smoke run
 just eval ckpt=models/e3-latest.pt
 just download-data           # enwik8 → data/, then: dvc add data/enwik8 && dvc push
@@ -128,7 +128,7 @@ prompt. It is gitignored, so only this checkout sees it; anything every clone mu
 still belongs here.)
 
 1. **Publish with `just ship-it`, never a bare `gt submit`.** The live gate is the only
-   thing in this repo that runs the MLflow stack: `tests/test_mlflow_live.py` `skipif`s
+   thing in this repo that runs the MLflow stack: `tests/live/test_mlflow_live.py` `skipif`s
    on `MLFLOW_TRACKING_URI`, so with no stack up the live tests **skip rather than
    fail** — reporting success by testing nothing. CI runs no containers either. That
    gap is how the gate went red at `main` and stayed red under a green CI.

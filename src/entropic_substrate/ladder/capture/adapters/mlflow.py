@@ -199,7 +199,7 @@ def _default_system_metrics_monitor_factory(
     """Lazy import: the ONLY place psutil/pynvml reach this module, and only
     when system-metrics logging is actually enabled — see the module-level
     "no unconditional import" invariant pinned by
-    ``tests/test_sinks.py::test_sinks_module_has_no_unconditional_psutil_or_pynvml_import``.
+    ``tests/unit/ladder/capture/reader/test_sinks.py::test_sinks_module_has_no_unconditional_psutil_or_pynvml_import``.
     """
     from mlflow.system_metrics.system_metrics_monitor import SystemMetricsMonitor
 
@@ -374,7 +374,7 @@ class MlflowSink:
         # exited, stranding every record logged afterwards). finish() queues a
         # ``None`` WAKE after setting ``_stop``, only to unblock a get(); on its
         # own it stops nothing. (Not a module-level ``object()`` sentinel:
-        # tests/test_module_identity.py freezes those as the p0 door.)
+        # tests/architecture/test_module_identity.py freezes those as the p0 door.)
         self._stop = threading.Event()
         self._queue: queue.Queue[_QueuedRecord | None] = queue.Queue(maxsize=max_queued_records)
         self._worker: threading.Thread | None = None
@@ -844,7 +844,7 @@ class MlflowSink:
         # OWN GUARD, deliberately separate from the termination block below: a
         # dead artifact store must not leave the run stuck in RUNNING —
         # set_terminated still fires and the failure is counted (pinned by
-        # tests/test_sinks.py). CompositeSink.finish() runs the authoritative
+        # tests/unit/ladder/capture/reader/test_sinks.py). CompositeSink.finish() runs the authoritative
         # JsonlSink first, so the file is complete before this upload reads it.
         if self._results_path is not None:
             try:
@@ -991,7 +991,7 @@ def __getattr__(name: str) -> type[BaseException]:
     never binding ``mlflow`` at module scope. The brief's own code-sketch
     (a module-scope ``from mlflow.exceptions import MlflowException``
     re-export) is RETRACTED BY MEASUREMENT -- it turns
-    ``tests/test_sinks.py::test_mlflow_adapter_module_never_binds_mlflow_at_module_scope``
+    ``tests/unit/ladder/capture/reader/test_sinks.py::test_mlflow_adapter_module_never_binds_mlflow_at_module_scope``
     RED (a module-level ``mlflow`` bind). This lazy form is GREEN on all
     three of that guard's assertions and yields the IDENTICAL class object
     (``is mlflow.exceptions.MlflowException`` — Python caches the imported

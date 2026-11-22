@@ -23,8 +23,12 @@ if str(SCRIPTS) not in sys.path:  # scripts/ is not a package; import exit_gate 
     # FUTURE top-level script name matching a stdlib or src module would
     # silently shadow it for the whole test session. Lowest priority instead.
     sys.path.append(str(SCRIPTS))
-if str(Path(__file__).parent) not in sys.path:  # sibling `helpers` under importlib mode
-    sys.path.insert(0, str(Path(__file__).parent))
+# Shared helper modules live in tests/support and are imported by bare name
+# (`from helpers import ...`) from every folder under tests/. tests/ itself stays
+# on the path for `suite_lock` and `xdist_policy`, which sit beside this file.
+for _helper_dir in (Path(__file__).parent, Path(__file__).parent / "support"):
+    if str(_helper_dir) not in sys.path:
+        sys.path.insert(0, str(_helper_dir))
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -101,7 +105,7 @@ def _configure_logging(capsys: pytest.CaptureFixture[str]) -> Iterator[None]:
     swaps "a fresh object per test" and that a setup-time rebind therefore
     followed it. Measured false: the swap is per phase, and the object this
     fixture saw at setup was not the one the test body wrote to
-    (``tests/test_conftest_sink_binding.py`` pins both facts).
+    (``tests/repo/test_conftest_sink_binding.py`` pins both facts).
 
     ``resolve_streams=True`` makes the sinks look ``sys.stdout``/``sys.stderr``
     up on every write, so they follow every phase's swap. Declaring
@@ -109,7 +113,7 @@ def _configure_logging(capsys: pytest.CaptureFixture[str]) -> Iterator[None]:
     before this body runs, so the setup-phase emissions are captured too.
 
     ``json_path=None``: the structured JSON sink is exercised directly by
-    ``tests/test_logging.py``; every other test in this ~300+-test suite
+    ``tests/unit/kernel/runtime/test_logging.py``; every other test in this ~300+-test suite
     would otherwise append to ``logs/entropic-substrate.jsonl`` on every
     run for no reason.
 

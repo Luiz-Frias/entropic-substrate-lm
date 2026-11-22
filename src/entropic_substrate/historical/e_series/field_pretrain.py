@@ -120,7 +120,7 @@ class FieldPretrainResult:
     """What one pretrain run produced.
 
     ``encoder`` is the LIVE trained module, not a re-read of ``out_path``:
-    a caller (and ``tests/test_field_pretrain.py``'s roundtrip test) can
+    a caller (and ``tests/unit/historical/e_series/test_field_pretrain.py``'s roundtrip test) can
     then compare what training produced against what the frozen loader
     reconstructs, which a file-vs-file comparison cannot do.
     """
@@ -178,7 +178,7 @@ def field_cross_entropy(
     no-op — the context managers compose.
 
     Module-level, not a private method, for two reasons: it is the seam
-    ``tests/test_field_pretrain.py`` poisons to prove the non-finite guards
+    ``tests/unit/historical/e_series/test_field_pretrain.py`` poisons to prove the non-finite guards
     are load-bearing, and it is the one place a future divergence from
     ``_field_loss_terms`` would have to be written down.
     """

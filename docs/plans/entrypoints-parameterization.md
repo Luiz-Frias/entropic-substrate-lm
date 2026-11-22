@@ -19,7 +19,7 @@ deliverable-10 line: "the dotted module names become ONE parameterized source
 | `src/entropic_substrate/h_probe_launch.py` | 164 | `entropic_substrate.sentence_prediction.worker_command` | literal tuple in `create_arguments`, the H0 remote-worker launch command |
 | `src/entropic_substrate/analysis/d1_external_analysis_adapter.py` | 224 | `entropic_substrate.analysis.d1_external_worker` | literal tuple in `_argv_v2`, the sandboxed D1 external-analysis worker command |
 | `src/entropic_substrate/telemetry.py` | 477 | `entropic_substrate.telemetry` | `argparse.ArgumentParser(prog=...)` display string only — cosmetic (`--help` text), not an invocation site; update it for consistency when telemetry's phase lands, but it is not part of the frozen-literal contract test |
-| `tests/test_d1_runpod_adapter.py` | 214 | `entropic_substrate.d1_trainer_mailbox_command` | test fixture asserting the exact `--docker-args` string RunPodAdapter emits; must track provider_launch.py's constant or it silently stops testing the real value |
+| `tests/unit/ladder/run/provider/test_d1_runpod_adapter.py` | 214 | `entropic_substrate.d1_trainer_mailbox_command` | test fixture asserting the exact `--docker-args` string RunPodAdapter emits; must track provider_launch.py's constant or it silently stops testing the real value |
 | `Containerfile` | 90 | `entropic_substrate.cli` | a comment showing an example manual override of the default `CMD` (`sleep infinity`); never executed by the build, but the literal will read stale once `entropic_substrate.cli` moves — p12 (which owns `justfile`/`run_ladder.sh`/`Containerfile` per the phase table) should update it in the same pass |
 
 Excluded deliberately: `analysis/d1_reader_source_closure.py:24` lists

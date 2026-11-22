@@ -1,7 +1,7 @@
 """Host suite lock: at most one xdist suite per host; a colliding run refuses, never races.
 
 MEASURED 2026-10-30: a terminal ``gt submit`` pre-push suite went red on
-``tests/test_h_probe_process.py`` (watchdog ready deadline, 10 s) while the
+``tests/unit/ladder/run/test_h_probe_process.py`` (watchdog ready deadline, 10 s) while the
 host sat at swap 96% and 15-minute load 22 on 8 GiB / 8 cores, with the podman
 VM holding 4 GiB and another worktree's ``-n auto`` hook suite resident. The
 same test passed 3/3 alone at the same HEAD; its spawn-to-ready latency was

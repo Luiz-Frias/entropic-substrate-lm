@@ -54,7 +54,7 @@ _COMMITTED = "committed"
 # The recorded scientific stop (DH-46): the ``run_end`` pair the worker writes when a run's
 # training raised a scientific gap (``object_worker``'s failure arm). These two literals are
 # this module's own; the capture layer never imports from ``ladder/run``, and
-# tests/test_h_pair_request.py pins them equal to the emitter by running the real worker.
+# tests/unit/ladder/run/test_h_pair_request.py pins them equal to the emitter by running the real worker.
 _FAILED_STATUS = "failed"
 _SCIENTIFIC_GAP = "scientific_gap"
 
@@ -74,7 +74,7 @@ def _json_object_lines(path: Path) -> list[dict[str, Any]]:
     to anything but an object is a defect in the stream and raises. The file
     is read as bytes and decoded per line so a corrupt byte is refused as a
     ``TelemetryGap`` naming its line. Measured 2026-10-15 (RED run of
-    ``tests/test_h_telemetry.py``): a text-mode read raised
+    ``tests/unit/ladder/capture/reader/test_h_telemetry.py``): a text-mode read raised
     ``UnicodeDecodeError`` out of the iteration, which is not a
     ``TelemetryGap`` and so is not caught by ``cmd_capture_results``.
     """
