@@ -56,6 +56,7 @@ from entropic_substrate.ladder.analyze.h_elm_projection import (
     HEADLINE_SAMPLES,
     ZERO_MASS_GAP,
     project_elm,
+    require_ess_within_sample_count,
     require_importance_entry,
 )
 from entropic_substrate.ladder.capture.reader.h_telemetry import (
@@ -589,6 +590,16 @@ def _check_proposal_blocks(
                     f"{path}: {where} {name} proposal has {have} rows at k={k} where q has {len(q_rows)}"
                 )
         _check_importance_rows(by_count, path, f"{where} {name} proposal")  # pyright: ignore[reportUnknownArgumentType]
+        # the [1, k] bound for EVERY admitted proposal (PR #435 review round 4): project_elm
+        # applies it only to the proposal it projects, q by default, so a prior or mixture
+        # ESS outside [1, k] would otherwise load as comparison data
+        for k, rows in by_count.items():  # pyright: ignore[reportUnknownVariableType]
+            for entry in rows:  # pyright: ignore[reportUnknownVariableType]
+                require_ess_within_sample_count(
+                    entry,  # pyright: ignore[reportUnknownArgumentType]
+                    int(k),  # pyright: ignore[reportUnknownArgumentType]
+                    f"{path}: {where} {name} proposal",
+                )
     _check_instrument_fields(example, schema, q_by_count, path, where)
 
 

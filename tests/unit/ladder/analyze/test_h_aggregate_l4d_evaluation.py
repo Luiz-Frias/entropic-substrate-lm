@@ -99,6 +99,37 @@ def test_a_proposal_whose_row_list_is_shorter_than_q_is_refused(tmp_path: Path, 
         _load(tmp_path, bad)
 
 
+@pytest.mark.parametrize(("name", "ess"), [("prior", 999.0), ("mixture", 0.5)])
+def test_a_proposal_ess_outside_one_to_k_is_refused(tmp_path: Path, name: str, ess: float) -> None:
+    """PR #435 review (Codex, round 4): the [1, k] bound was applied only inside
+    ``project_elm``, which the loader runs for q alone, so a damaged capture admitted an
+    impossible prior or mixture ESS (999 at k=2 reported as ``eval/ess_prior_k2 = 999``).
+    MEASURED 2026-11-22: without the check at admission both cases load."""
+
+    def bad(row: dict[str, Any]) -> None:
+        by_count = row["examples"][0]["proposals"][name]["by_sample_count"]
+        k = min(by_count, key=int)
+        entry = next(e for e in by_count[k] if e.get("gap") is None)
+        entry["effective_sample_size"] = ess
+
+    with pytest.raises(TelemetryGap, match=f"{name} proposal .* effective_sample_size .* outside"):
+        _load(tmp_path, bad)
+
+
+@pytest.mark.parametrize("name", ["prior", "mixture"])
+def test_a_proposal_ess_on_either_bound_still_loads(tmp_path: Path, name: str) -> None:
+    """The control for the refusal above: ESS of exactly 1 and exactly k are attainable."""
+
+    def edge(row: dict[str, Any]) -> None:
+        for example in row["examples"]:
+            for k, entries in example["proposals"][name]["by_sample_count"].items():
+                for i, entry in enumerate(e for e in entries if e.get("gap") is None):
+                    entry["effective_sample_size"] = 1.0 if i % 2 == 0 else float(k)
+
+    run = _load(tmp_path, edge)
+    assert run.evaluations
+
+
 def test_a_mixture_block_with_another_sample_count_set_is_refused(tmp_path: Path) -> None:
     def bad(row: dict[str, Any]) -> None:
         del row["examples"][0]["proposals"]["mixture"]["by_sample_count"]["4"]

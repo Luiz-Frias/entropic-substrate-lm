@@ -109,6 +109,21 @@ def require_importance_entry(entry: Mapping[str, Any], where: str) -> None:
         _gap(f"{where} has an unknown gap {gap!r}")
 
 
+def require_ess_within_sample_count(entry: Mapping[str, Any], k: int, where: str) -> None:
+    """The ESS of one finite importance row lies in ``[1, k]`` (``_ESS_SLACK`` absorbs rounding).
+
+    ESS = 1 / sum(w_i^2) over k normalized weights cannot leave that interval, so a value
+    outside it is a damaged capture, never a sampling result. A gap row carries no ESS and is
+    not checked here; ``require_importance_entry`` owns its shape. One definition, read by the
+    projection for the proposal it projects and by the loader for every proposal it admits.
+    """
+    if entry.get("gap") is not None:
+        return
+    ess = float(entry["effective_sample_size"])
+    if not 1 - _ESS_SLACK <= ess <= k * (1 + _ESS_SLACK):
+        _gap(f"{where} k={k} has effective_sample_size {ess} outside [1, {k}]")
+
+
 def _counts(example: Mapping[str, Any], field: str, minimum: int, where: str) -> list[int]:
     value = example.get(field)
     if not isinstance(value, list) or not value:
@@ -220,9 +235,8 @@ def project_elm(
                     per_byte.setdefault(k, []).append(None)
                     ratios.setdefault(k, []).append(None)
                     continue
+                require_ess_within_sample_count(row, k, at)  # pyright: ignore[reportUnknownArgumentType]
                 ess = float(row["effective_sample_size"])  # pyright: ignore[reportUnknownArgumentType]
-                if not 1 - _ESS_SLACK <= ess <= k * (1 + _ESS_SLACK):
-                    _gap(f"{at} k={k} has effective_sample_size {ess} outside [1, {k}]")
                 per_byte.setdefault(k, []).append(float(row["log_estimate"]) / n)  # pyright: ignore[reportUnknownArgumentType]
                 numerator[k] = numerator.get(k, 0.0) + float(row["log_estimate"])  # pyright: ignore[reportUnknownArgumentType]
                 sum_bytes[k] = sum_bytes.get(k, 0) + n
