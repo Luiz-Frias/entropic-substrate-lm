@@ -3,7 +3,7 @@
 Rung A (operator ruling 2026-10-27) gathers the class gates that were scattered across
 the worker request, runner, worker command, execution/completion receipts and launch
 into this table, without changing a single verdict (pinned by
-``tests/test_h_run_admission_sites.py``).
+``tests/unit/ladder/run/test_h_run_admission_sites.py``).
 
 Rung B (operator ruling 2026-10-27, "option B") admits the scientific classes ``pilot``
 and ``confirmatory`` at H1-H5 on the remote worker and the launch, but only under a
