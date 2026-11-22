@@ -10,6 +10,9 @@ record store that grows without bound.
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -264,3 +267,104 @@ def test_the_scoped_stage_keeps_the_fast_marker_and_parallel_flags() -> None:
     stage = stages.scoped_commit_stage(("tests/unit/core/latent",))
     assert stage == stages.Stage(("tests/unit/core/latent",), "not slow")
     assert stages.scoped_commit_stage(()) is None
+
+
+# --- review round 1 (PR 439) ------------------------------------------------
+
+
+def _g(repo: Path, *args: str, env: dict[str, str] | None = None) -> str:
+    done = subprocess.run(
+        ["git", *args], cwd=repo, check=True, capture_output=True, text=True, env=env
+    )
+    return done.stdout.strip()
+
+
+def _tmp_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _g(repo, "init", "-q", "-b", "main")
+    _g(repo, "config", "user.email", "t@example.invalid")
+    _g(repo, "config", "user.name", "t")
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    _g(repo, "add", "-A")
+    _g(repo, "commit", "-q", "-m", "base")
+    return repo
+
+
+def _branch(repo: Path, name: str, onto: str) -> str:
+    _g(repo, "checkout", "-q", "-b", name, onto)
+    (repo / f"{name}.txt").write_text(name, encoding="utf-8")
+    _g(repo, "add", "-A")
+    _g(repo, "commit", "-q", "-m", name)
+    return _g(repo, "rev-parse", "HEAD")
+
+
+def test_staged_paths_come_from_the_index_git_hands_the_hook(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `git commit -a` and `git commit --only` give the hook a TEMPORARY index
+    # through GIT_INDEX_FILE; the ordinary index shows nothing staged.
+    repo = _tmp_repo(tmp_path)
+    (repo / "a.txt").write_text("changed\n", encoding="utf-8")
+    alt = tmp_path / "alt-index"
+    shutil.copy(repo / ".git" / "index", alt)
+    _g(repo, "add", "a.txt", env={**os.environ, "GIT_INDEX_FILE": str(alt)})
+    assert _g(repo, "diff", "--cached", "--name-only") == ""  # control: default index is clean
+    monkeypatch.setenv("GIT_INDEX_FILE", str(alt))
+    assert stages._staged(repo) == ["a.txt"]
+
+
+def test_pushed_commits_are_read_from_the_hook_input_not_from_head(tmp_path: Path) -> None:
+    repo = _tmp_repo(tmp_path)
+    one = _branch(repo, "one", "main")
+    other = _branch(repo, "other", "main")
+    zero = "0" * 40
+    lines = [f"refs/heads/one {one} refs/heads/one {zero}", f"(delete) {zero} refs/heads/x {one}"]
+    assert _g(repo, "rev-parse", "HEAD") == other
+    _g(repo, "update-ref", "refs/remotes/origin/main", "main")
+    assert stages.pushed_commits(repo, stdin_lines=lines, to_ref=None) == [one]
+    assert stages.pushed_commits(repo, stdin_lines=[], to_ref=one) == [one]
+    assert stages.pushed_commits(repo, stdin_lines=[], to_ref=None) == [other]
+
+
+def test_a_stack_push_also_names_every_unpushed_branch_on_the_same_line(tmp_path: Path) -> None:
+    # The hook runner hands over ONE ref; `gt submit --stack` pushes the line.
+    repo = _tmp_repo(tmp_path)
+    bottom = _branch(repo, "bottom", "main")
+    top = _branch(repo, "top", "bottom")
+    _branch(repo, "sibling", "main")
+    _g(repo, "update-ref", "refs/remotes/origin/main", "main")
+    assert stages.pushed_commits(repo, stdin_lines=[], to_ref=bottom) == [bottom, top]
+    _g(repo, "update-ref", "refs/remotes/origin/top", top)  # top is already published
+    assert stages.pushed_commits(repo, stdin_lines=[], to_ref=bottom) == [bottom]
+
+
+def test_the_push_gate_refuses_when_any_pushed_tree_has_a_failed_record(tmp_path: Path) -> None:
+    store = tmp_path / "store"
+    stages.write_record(store, stages.Record("a" * 40, "post-commit", True, "ok"))
+    stages.write_record(store, stages.Record("b" * 40, "post-commit", False, "1 failed"))
+    reran: list[str] = []
+
+    def rerun(tree: str) -> bool:
+        reran.append(tree)
+        return True
+
+    assert stages.verify_all(store, ["a" * 40, "b" * 40], rerun=rerun) == ["b" * 40]
+    assert stages.verify_all(store, ["a" * 40, "c" * 40], rerun=rerun) == []
+    assert reran == ["c" * 40]
+
+
+def test_an_export_records_the_tree_of_the_commit_it_was_given(tmp_path: Path) -> None:
+    repo = _tmp_repo(tmp_path)
+    one = _branch(repo, "one", "main")
+    _branch(repo, "other", "main")
+    seen: list[Path] = []
+
+    def fake(stage: stages.Stage, *, cwd: Path, src: Path) -> tuple[bool, str]:
+        seen.append(cwd)
+        assert (cwd / "one.txt").is_file() and not (cwd / "other.txt").exists()
+        return True, "ok"
+
+    record = stages.run_in_export(repo, "post-commit", commit=one, run=fake)
+    assert record.tree == _g(repo, "rev-parse", f"{one}^{{tree}}")
+    assert seen and not seen[0].exists()  # the export is gone afterwards

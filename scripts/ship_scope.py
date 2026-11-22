@@ -5,7 +5,7 @@ Slim ``ship-it`` does not bring up the live MLflow stack. This guard reads
 the files changed against the base and exits 3, naming them and
 ``just ship-it-full``, when any of them can change how the live stack
 behaves: the compose project, the image definition, the dependency set, the
-MLflow adapter and sinks, the container gate itself, or the live tests.
+MLflow adapter and sinks, the container gate itself (its script and its\n``container-test`` recipe), or the live tests.
 
     python scripts/ship_scope.py                # base: origin/main
     python scripts/ship_scope.py --base main
@@ -41,6 +41,27 @@ INFRA_PATTERNS: tuple[str, ...] = (
     "src/entropic_substrate/ladder/capture/reader/sinks.py",
     "tests/live/*",
 )
+# The gate's own entry point. The justfile as a whole is not a live-stack
+# file (most recipes are unrelated), so only a change to THIS recipe counts;
+# `changed_files` reports it under this label.
+GATE_RECIPE = "container-test"
+GATE_RECIPE_LABEL = f"justfile ({GATE_RECIPE} recipe)"
+
+
+def recipe_text(justfile: str, name: str) -> str:
+    """One recipe's header line and indented body, or "" when it is absent."""
+    lines = justfile.splitlines()
+    for index, line in enumerate(lines):
+        head = line.split(":", 1)[0].split()
+        if ":" not in line or line[:1].isspace() or not head or head[0].lstrip("@") != name:
+            continue
+        body = [line]
+        for following in lines[index + 1 :]:
+            if following.strip() and not following[:1].isspace():
+                break
+            body.append(following)
+        return "\n".join(body).rstrip()
+    return ""
 
 
 def requires_full(changed: Sequence[str], *, patterns: Sequence[str] = INFRA_PATTERNS) -> list[str]:
@@ -49,7 +70,8 @@ def requires_full(changed: Sequence[str], *, patterns: Sequence[str] = INFRA_PAT
         {
             path
             for path in changed
-            if any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
+            if path == GATE_RECIPE_LABEL
+            or any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
         }
     )
 
@@ -79,8 +101,27 @@ def changed_files(repo: Path, base: str) -> list[str]:
         )
         return done.stdout.strip()
 
+    def recipe_at(revision: str) -> str:
+        shown = subprocess.run(  # nosec B603 B607 -- git from PATH by design, fixed argv plus one resolved commit
+            ["git", "show", f"{revision}:justfile"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        return recipe_text(shown.stdout, GATE_RECIPE) if shown.returncode == 0 else ""
+
     merge_base = git("merge-base", "HEAD", base)
-    return [line for line in git("diff", "--name-only", f"{merge_base}..HEAD").splitlines() if line]
+    # --no-renames: with rename detection a moved file is reported under its
+    # NEW path only, so renaming compose.yaml away would hide that it left.
+    files = [
+        line
+        for line in git("diff", "--name-only", "--no-renames", f"{merge_base}..HEAD").splitlines()
+        if line
+    ]
+    if "justfile" in files and recipe_at(merge_base) != recipe_at("HEAD"):
+        files.append(GATE_RECIPE_LABEL)
+    return files
 
 
 def main(argv: Sequence[str] | None = None) -> int:

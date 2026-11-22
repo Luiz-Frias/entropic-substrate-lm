@@ -9,6 +9,9 @@ changes" only holds if a machine decides what counts as infra.
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
 import pytest
 import ship_scope
 
@@ -77,8 +80,6 @@ def test_decide_names_the_files_and_the_recipe_to_run() -> None:
 
 
 def test_every_infra_pattern_matches_something_in_this_repository() -> None:
-    import subprocess
-
     import repo_paths
 
     tracked = subprocess.run(
@@ -90,3 +91,75 @@ def test_every_infra_pattern_matches_something_in_this_repository() -> None:
         if not ship_scope.requires_full(tracked, patterns=(pattern,))
     ]
     assert dead == [], "a pattern that matches no tracked file guards nothing"
+
+
+# --- review round 1 (PR 439): the gate's own entry point, and renames -------
+
+
+def _git(repo: Path, *args: str) -> str:
+    done = subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+    return done.stdout.strip()
+
+
+def _repo(tmp_path: Path, justfile: str = "container-test:\n    bash gate.sh\n") -> Path:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@example.invalid")
+    _git(repo, "config", "user.name", "t")
+    (repo / "justfile").write_text(justfile + "\nother:\n    echo hi\n", encoding="utf-8")
+    (repo / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+    (repo / "notes.md").write_text("n\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "checkout", "-q", "-b", "work")
+    return repo
+
+
+def _commit(repo: Path) -> None:
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "change")
+
+
+def test_a_change_to_the_container_test_recipe_requires_the_full_gate(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    text = (repo / "justfile").read_text(encoding="utf-8")
+    (repo / "justfile").write_text(text.replace("bash gate.sh", "true"), encoding="utf-8")
+    _commit(repo)
+    code, message = ship_scope.decide(ship_scope.changed_files(repo, "main"))
+    assert code == ship_scope.EXIT_NEEDS_FULL
+    assert "container-test" in message
+
+
+def test_a_change_to_another_recipe_in_the_justfile_stays_slim(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    text = (repo / "justfile").read_text(encoding="utf-8")
+    (repo / "justfile").write_text(text.replace("echo hi", "echo bye"), encoding="utf-8")
+    _commit(repo)
+    code, _ = ship_scope.decide(ship_scope.changed_files(repo, "main"))
+    assert code == 0
+
+
+def test_renaming_a_live_stack_file_away_is_still_seen(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "notes").mkdir()
+    _git(repo, "mv", "compose.yaml", "notes/compose.yaml.md")
+    _commit(repo)
+    changed = ship_scope.changed_files(repo, "main")
+    assert "compose.yaml" in changed
+    assert ship_scope.decide(changed)[0] == ship_scope.EXIT_NEEDS_FULL
+
+
+def test_the_recipe_reader_takes_the_header_and_indented_body_only() -> None:
+    text = "a:\n    one\n\n# note\ncontainer-test dep: x\n    two\n    three\n\nb:\n    four\n"
+    assert ship_scope.recipe_text(text, "container-test") == (
+        "container-test dep: x\n    two\n    three"
+    )
+    assert ship_scope.recipe_text(text, "missing") == ""
+
+
+def test_the_guarded_recipe_exists_in_this_repository() -> None:
+    import repo_paths
+
+    text = (repo_paths.REPO_ROOT / "justfile").read_text(encoding="utf-8")
+    assert "run_container_test.sh" in ship_scope.recipe_text(text, ship_scope.GATE_RECIPE)

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from entropic_substrate.ladder.capture.reader import telemetry
 from entropic_substrate.ladder.capture.records import d1_telemetry
+
+pytestmark = pytest.mark.unit
 
 
 def test_public_d1_exports_are_the_evidence_facade_objects() -> None:

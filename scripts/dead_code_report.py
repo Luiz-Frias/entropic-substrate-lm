@@ -134,7 +134,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     outside = [
         base / name for name in (*DEFAULT_ROOT_FILES, *DEFAULT_ROOT_DIRS) if (base / name).exists()
     ]
-    dead = unreached(package, extra_roots=outside)
+    try:
+        dead = unreached(package, extra_roots=outside)
+    except (OSError, SyntaxError, ValueError) as error:
+        # Warning-only by contract: a file this report cannot read or parse
+        # must not turn the post-ship step red.
+        print(f"dead-code: WARNING report incomplete, inspection failed: {error}")
+        return 0
     if not dead:
         print("dead-code: every source module is reachable from an entrypoint")
         return 0

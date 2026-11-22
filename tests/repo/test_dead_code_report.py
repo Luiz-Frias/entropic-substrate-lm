@@ -78,3 +78,14 @@ def test_the_cli_warns_and_still_exits_zero(
     out = capsys.readouterr().out
     assert "WARNING" in out
     assert "pkg/orphan.py" in out
+
+
+def test_a_file_that_cannot_be_parsed_warns_and_still_exits_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    package = tmp_path / "src" / "pkg"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "broken.py").write_text("def (:\n", encoding="utf-8")
+    assert report.main(["--package", str(package)]) == 0
+    assert "incomplete" in capsys.readouterr().out

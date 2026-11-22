@@ -10,7 +10,8 @@ a set of folders plus an optional marker filter:
                  fault, fast                            its exit), so it writes a
                                                         RECORD keyed by tree
     pre-push     tests/unit tests/e2e, including slow   blocks the push, and reads
-                                                        the record
+                                                        the record of EVERY
+                                                        pushed commit's tree
     post-ship    repo integration architecture fault,   after `gt submit`
                  including slow
 
@@ -213,11 +214,21 @@ def _clean_env() -> dict[str, str]:
     return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: Path, *args: str, keep_index: bool = False) -> str:
+    env = _clean_env()
+    if keep_index and "GIT_INDEX_FILE" in os.environ:
+        env["GIT_INDEX_FILE"] = os.environ["GIT_INDEX_FILE"]
     done = subprocess.run(  # nosec B603 B607 -- git from PATH by design, fixed argv
-        ["git", *args], cwd=repo, env=_clean_env(), check=True, capture_output=True, text=True
+        ["git", *args], cwd=repo, env=env, check=True, capture_output=True, text=True
     )
     return done.stdout.strip()
+
+
+def _git_ok(repo: Path, *args: str) -> bool:
+    done = subprocess.run(  # nosec B603 B607 -- git from PATH by design, fixed argv
+        ["git", *args], cwd=repo, env=_clean_env(), check=False, capture_output=True
+    )
+    return done.returncode == 0
 
 
 def _store(repo: Path) -> Path:
@@ -227,7 +238,55 @@ def _store(repo: Path) -> Path:
 def _staged(repo: Path) -> list[str]:
     # --no-renames lists both sides of a move, so the folder a file LEFT is
     # tested as well as the one it arrived in.
-    return _git(repo, "diff", "--cached", "--name-only", "--no-renames").splitlines()
+    # keep_index: `git commit -a` and `git commit --only` hand the hook a
+    # TEMPORARY index through GIT_INDEX_FILE; the ordinary index would show
+    # nothing staged and the stage would skip every unit test.
+    return _git(
+        repo, "diff", "--cached", "--name-only", "--no-renames", keep_index=True
+    ).splitlines()
+
+
+ZERO_OID = "0" * TREE_HEX
+PUSH_FIELDS = 4
+
+
+def pushed_commits(repo: Path, *, stdin_lines: Sequence[str], to_ref: str | None) -> list[str]:
+    """The commits a push carries, most direct source first.
+
+    git gives a pre-push hook one ``<local ref> <local oid> <remote ref>
+    <remote oid>`` line per ref. A hook runner may consume that and pass ONE
+    ref on (``PRE_COMMIT_TO_REF``); a stacked push carries the whole line, so
+    in that case every local branch on the same line of history that still
+    holds commits no remote has is added. With neither, the commit is HEAD.
+    """
+    listed = [
+        fields[1]
+        for fields in (line.split() for line in stdin_lines)
+        if len(fields) == PUSH_FIELDS and fields[1] != ZERO_OID
+    ]
+    if listed:
+        return list(dict.fromkeys(listed))
+    if not to_ref:
+        return [_git(repo, "rev-parse", "HEAD")]
+    primary = _git(repo, "rev-parse", f"{to_ref}^{{commit}}")
+    commits = [primary]
+    for head in _git(repo, "for-each-ref", "--format=%(objectname)", "refs/heads").split():
+        if head in commits or not _git(repo, "rev-list", "-1", head, "--not", "--remotes"):
+            continue
+        if _git_ok(repo, "merge-base", "--is-ancestor", head, primary) or _git_ok(
+            repo, "merge-base", "--is-ancestor", primary, head
+        ):
+            commits.append(head)
+    return commits
+
+
+def verify_all(store: Path, trees: Iterable[str], *, rerun: Callable[[str], bool]) -> list[str]:
+    """The trees that may NOT be pushed: a failed record, or a failed run now."""
+    return [
+        tree
+        for tree in dict.fromkeys(trees)
+        if not verify(store, tree, rerun=lambda tree=tree: rerun(tree))
+    ]
 
 
 def _live_trees(repo: Path) -> set[str]:
@@ -276,16 +335,20 @@ def link_dvc_data(repo: Path, export: Path) -> list[str]:
     return linked
 
 
-def run_in_export(repo: Path, stage_name: str) -> Record:
-    """Run a stage against a throwaway worktree of HEAD and record the result."""
-    tree = _git(repo, "rev-parse", "HEAD^{tree}")
-    commit = _git(repo, "rev-parse", "HEAD")
+def export_run(
+    repo: Path,
+    stage: Stage,
+    commit: str,
+    *,
+    run: Callable[..., tuple[bool, str]] = run_stage,
+) -> tuple[bool, str]:
+    """Run a stage against a throwaway worktree of ``commit``."""
     scratch = Path(tempfile.mkdtemp(prefix="suite-export-"))
     export = scratch / "tree"
     try:
         _git(repo, "worktree", "add", "--detach", str(export), commit)
         link_dvc_data(repo, export)
-        passed, summary = run_stage(STAGES[stage_name], cwd=export, src=export / "src")
+        return run(stage, cwd=export, src=export / "src")
     finally:
         subprocess.run(  # nosec B603 B607 -- git from PATH by design, fixed argv
             ["git", "worktree", "remove", "--force", str(export)],
@@ -302,9 +365,69 @@ def run_in_export(repo: Path, stage_name: str) -> Record:
             check=False,
             capture_output=True,
         )
+
+
+def run_in_export(
+    repo: Path,
+    stage_name: str,
+    *,
+    commit: str | None = None,
+    run: Callable[..., tuple[bool, str]] = run_stage,
+) -> Record:
+    """Run a stage against a throwaway worktree of a commit and record the result."""
+    # Resolved ONCE, and the tree derived from that commit: two reads of HEAD
+    # could file commit B's result under commit A's tree if HEAD moved between.
+    commit = _git(repo, "rev-parse", f"{commit or 'HEAD'}^{{commit}}")
+    tree = _git(repo, "rev-parse", f"{commit}^{{tree}}")
+    passed, summary = export_run(repo, STAGES[stage_name], commit, run=run)
     record = Record(tree, stage_name, passed, summary)
     write_record(_store(repo), record)
     return record
+
+
+def _hook_stdin() -> list[str]:
+    stream = sys.stdin
+    if stream is None or stream.closed or stream.isatty():
+        return []
+    try:
+        return stream.read().splitlines()
+    except OSError:
+        return []
+
+
+def push_gate(repo: Path, commits: Sequence[str], *, full_for: Sequence[str]) -> bool:
+    """Admit a push only when every pushed commit passes on its OWN tree."""
+    store = _store(repo)
+    head = _git(repo, "rev-parse", "HEAD")
+    clean = not _git(repo, "status", "--porcelain", "--untracked-files=no")
+    tree_of = {commit: _git(repo, "rev-parse", f"{commit}^{{tree}}") for commit in commits}
+    done: set[str] = set()
+    for commit in full_for:
+        if tree_of[commit] in done:
+            continue
+        done.add(tree_of[commit])
+        if commit == head and clean:
+            passed, summary = run_stage(STAGES["pre-push"], cwd=repo, src=repo / "src")
+        else:
+            passed, summary = export_run(repo, STAGES["pre-push"], commit)
+        _say(f"pre-push unit + e2e for {commit[:12]}: {summary}")
+        if not passed:
+            return False
+    by_tree = {tree: commit for commit, tree in tree_of.items()}
+    refused = verify_all(
+        store,
+        tree_of.values(),
+        rerun=lambda tree: run_in_export(repo, "post-commit", commit=by_tree[tree]).passed,
+    )
+    for tree in dict.fromkeys(tree_of.values()):
+        record = read_record(store, tree)
+        verdict = "FAIL" if tree in refused else "PASS"
+        _say(
+            f"post-commit record for tree {tree[:12]}: {verdict}: {record.summary if record else 'absent'}"
+        )
+    if not refused:
+        _say(f"pruned {prune(store, keep=_live_trees(repo))} stale record(s)")
+    return not refused
 
 
 def _say(message: str) -> None:
@@ -342,20 +465,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         _say(f"post-commit {verdict} for tree {record.tree[:12]}: {record.summary}")
         return 0
 
-    passed, summary = run_stage(STAGES["pre-push"], cwd=repo, src=repo / "src")
-    _say(f"pre-push: {summary}")
-    if not passed:
-        return 1
-    tree = _git(repo, "rev-parse", "HEAD^{tree}")
-    store = _store(repo)
-    admitted = verify(store, tree, rerun=lambda: run_in_export(repo, "post-commit").passed)
-    record = read_record(store, tree)
-    _say(
-        f"post-commit record for tree {tree[:12]}: {'PASS' if admitted else 'FAIL'}: {record.summary if record else 'absent'}"
-    )
-    if admitted:
-        _say(f"pruned {prune(store, keep=_live_trees(repo))} stale record(s)")
-    return 0 if admitted else 1
+    to_ref = os.environ.get("PRE_COMMIT_TO_REF")
+    lines = _hook_stdin()
+    commits = pushed_commits(repo, stdin_lines=lines, to_ref=to_ref)
+    head = _git(repo, "rev-parse", "HEAD")
+    # The full unit + e2e run goes to every commit the push NAMED, and to HEAD
+    # when the push carries it; a branch added only because it shares the
+    # stack line gets the record check (the full run for it is CI's).
+    named = commits if lines or not to_ref else commits[:1]
+    full_for = [*named, *([head] if head in commits and head not in named else [])]
+    return 0 if push_gate(repo, commits, full_for=full_for) else 1
 
 
 if __name__ == "__main__":

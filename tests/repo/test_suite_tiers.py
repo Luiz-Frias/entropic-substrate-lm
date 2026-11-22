@@ -170,3 +170,15 @@ def test_every_slow_file_keeps_a_tier_marker_so_the_full_gate_selects_it() -> No
         if not (_module_marks(ast.parse(p.read_text())) & TIER_MARKS)
     ]
     assert orphans == []
+
+
+def test_every_unit_module_carries_the_unit_marker() -> None:
+    # `just test` and `just check` select with `-m unit`; a module under
+    # tests/unit without the marker is collected by the hook stages and
+    # silently skipped by the gate. Found 2026-11-21: two modules, 11 tests.
+    unmarked = sorted(
+        path.relative_to(repo_paths.REPO_ROOT).as_posix()
+        for path in (repo_paths.TESTS_ROOT / "unit").rglob("test_*.py")
+        if "mark.unit" not in path.read_text(encoding="utf-8")
+    )
+    assert unmarked == []
