@@ -139,7 +139,9 @@ still belongs here.)
    RETRACTED 2026-11-21 (operator ruling): "`ship-it` always runs the live gate". Slim
    `ship-it` runs no containers; `scripts/ship_scope.py` makes it refuse, naming
    `just ship-it-full`, when the stack touches compose, the image definition, dependency
-   files, the MLflow adapter or sinks, the container gate, or `tests/live`. A bot's
+   files, the MLflow adapter or sinks, the container gate, `tests/live`, or the logging
+   substrate and the series emission paths (`ship-it-full` also runs the logger smoke inside the
+   pinned image). A bot's
    dependency PR passes through neither recipe.
 
 2. **Probe sequentially. Never draw a conclusion from concurrent containers.** The
