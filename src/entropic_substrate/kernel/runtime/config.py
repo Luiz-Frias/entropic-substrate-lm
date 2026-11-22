@@ -277,7 +277,7 @@ class Config:
 # while unregistered. This in-code map — not a docs/ stat — is the RUNTIME
 # half of the execution gate because the training image carries no docs/
 # (Containerfile copies src/ configs/ scripts/ only), so a pod cannot check
-# the file. The CI half (tests/test_execution_gate.py) pins every non-None
+# the file. The CI half (tests/unit/composition/entrypoints/test_execution_gate.py) pins every non-None
 # entry to a file that actually exists in the repo, so the assertion and
 # the artifact cannot drift. Flip an entry to a path ONLY in the same
 # commit that adds the preregistration document (docs/rung-lifecycle-

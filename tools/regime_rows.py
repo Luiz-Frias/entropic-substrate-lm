@@ -16,7 +16,7 @@ tip. The regime strings are inputs, never guessed by this tool: measure them
 (a dry-run resolution on CI's platform, or CI's own log) and pass them in.
 
 Control: fed the local regime strings, both functions must reproduce the repo's
-own identity functions exactly (pinned by tests/test_regime_rows.py). Run from
+own identity functions exactly (pinned by tests/unit/ladder/capture/test_regime_rows.py). Run from
 the repo root with ``PYTHONPATH=src`` or ``uv run --no-sync``:
 
     uv run --no-sync python tools/regime_rows.py --python 3.12.14 --torch 2.13.0+cpu --pysbd 0.3.4

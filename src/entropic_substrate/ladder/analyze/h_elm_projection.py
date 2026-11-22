@@ -66,7 +66,7 @@ HEADLINE_SAMPLES = 64
 DENOMINATORS = ("source_bytes", "source_bytes_plus_boundary")
 # The closed proposal vocabulary of ``h-predictive-evaluation-v2`` (FOR-1704). q is the v1 proposal
 # at its v1 keys; the others live under ``example["proposals"]``. Pinned equal to the writer's
-# Literal by tests/test_h_elm_projection.py, never imported from a reader member.
+# Literal by tests/integration/test_h_elm_projection.py, never imported from a reader member.
 PROPOSALS = ("q", "prior", "mixture")
 DEFAULT_DENOMINATOR = DENOMINATORS[0]
 ZERO_MASS_GAP = "zero_importance_weight_mass"

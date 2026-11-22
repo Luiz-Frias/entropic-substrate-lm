@@ -57,10 +57,10 @@ composite when it is given a ``metric_extractor``, mirroring the worker's ``stag
 ``admission.end`` log lines into the sink as ``h-worker-stage-v1`` records (see
 :class:`CompositeSink`); ``finish()`` removes it first. Signature and abort semantics are
 untouched. This module may not import ``ladder.run`` (the capture layer's edge, pinned by
-``tests/test_h_worker_log_lines.py::test_ladder_capture_never_imports_the_run_layer``), so
+``tests/unit/ladder/run/test_h_worker_log_lines.py::test_ladder_capture_never_imports_the_run_layer``), so
 the event names, the schema and the field list below are literals; the closed vocabulary is
 enforced where the record is PROJECTED (``worker_log_events.project_worker_stage_record``,
-called by ``HTrainingStepExtractor``), and ``tests/test_h_stage_metrics_bridge.py`` pins the
+called by ``HTrainingStepExtractor``), and ``tests/live/test_h_stage_metrics_bridge.py`` pins the
 literals against it.
 
 p8 re-pointing any of these six names to their eventual landed home is a BODY
@@ -69,7 +69,7 @@ the door's signature and abort contract are unchanged by where the residue
 lives. The one exception is ``MlflowStartupError``'s class IDENTITY: it is
 part of ``build_sink_for_run``'s documented startup-abort contract (see that
 function's docstring), and out-of-envelope callers catch it by the old
-prefix (``tests/test_caddy_auth.py``, ``tests/test_sinks.py``,
+prefix (``tests/live/test_caddy_auth.py``, ``tests/unit/ladder/capture/reader/test_sinks.py``,
 ``__legacy/cli.py``) -- p8 MUST re-export the SAME class object under its new
 home, never redefine it, or ``except MlflowStartupError`` silently stops
 catching and a bad ``MLFLOW_TRACKING_URI`` burns GPU hours instead of

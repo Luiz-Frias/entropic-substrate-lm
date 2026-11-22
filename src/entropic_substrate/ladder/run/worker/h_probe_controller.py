@@ -63,7 +63,7 @@ from entropic_substrate.ladder.run.worker_request import AnyProbeRequest, PairPr
 # Provider codes the poll treats as transient: logged as a named host event and the
 # poll continues at the existing cadence, adding no fast-fail path. This duplicates
 # the watchdog's own tolerated set (ladder/run/h_probe_watchdog.py:191-196, outside
-# this phase's envelope); tests/test_h_probe_log_events.py pins the equality.
+# this phase's envelope); tests/unit/ladder/run/worker/test_h_probe_log_events.py pins the equality.
 _TRANSIENT_PROVIDER_CODES = ("network_error", "timeout", "rate_limited", "server_error")
 
 
@@ -103,7 +103,7 @@ class ProbeProviderAbsent(RuntimeError):
 # ``h_probe_resume``'s paused-status check (R3). This regex is not the R3 guard.
 # RETRACTED 2026-11-02: the parenthetical "that gate and its pin ship in the staged DG-A patch,
 # not on this tip" was false. The gate is on this tip (``worker_request.py``, the ``handoff-``
-# check at line 472), and ``tests/test_h_pair_remote_dga.py`` pins that the hand-off receipt is
+# check at line 472), and ``tests/fault/test_h_pair_remote_dga.py`` pins that the hand-off receipt is
 # never a resume target.
 _RESUME_RECEIPT = re.compile(r"-(codec_warmup|prediction)-(\d{8})-progress\.json")
 

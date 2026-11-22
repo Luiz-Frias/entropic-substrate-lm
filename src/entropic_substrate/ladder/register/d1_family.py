@@ -250,7 +250,7 @@ class D1ExperimentFamily:
         # family this loop accepted changed exactly those five manifest keys, and each
         # shared-field difference tried (codec, encoder_pair, future_law,
         # execution_protocol) was refused here first. It cost two recursive manifest walks
-        # per draft and is deleted; tests/test_d1_family.py pins both arms of this guard
+        # per draft and is deleted; tests/unit/ladder/register/test_d1_family.py pins both arms of this guard
         # and that the manifest is not read during construction.
         baseline = self.drafts[0]
         shared_fields = (

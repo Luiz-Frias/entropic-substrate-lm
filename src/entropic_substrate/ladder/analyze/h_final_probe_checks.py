@@ -102,7 +102,7 @@ _LIFECYCLE_SCHEMA = "h-run-lifecycle-v1"
 # v1 is the H0 capture (read-old); v2 (FOR-1704) adds the prior and mixture proposals and leaves
 # the q rows at their v1 keys, so K6 reads the q curve of either unchanged. A literal tuple of its
 # own (the _GENERATION_SCHEMAS precedent below), pinned equal to the writer's admitted set by
-# tests/test_h_metric_extractor_l4d.py.
+# tests/unit/ladder/run/test_h_metric_extractor_l4d.py.
 _EVALUATION_SCHEMAS = ("h-predictive-evaluation-v1", "h-predictive-evaluation-v2")
 # The generation receipt schemas this check reads. v2 is the one in-tree v2 receipt reader
 # (the HEpP7g capture replays here, ruling D3); v3 (FOR-1674) adds ``continuations`` and
@@ -673,7 +673,7 @@ def evaluated_samples_from_manifest(manifest: object) -> tuple[int, ...]:
 
 
 # The one gap the reader admits; mirrors h_aggregate._ZERO_MASS_GAP (private there), pinned
-# equal by tests/test_h_final_probe_checks.py::TestK6.
+# equal by tests/unit/ladder/analyze/test_h_final_probe_checks.py::TestK6.
 _ZERO_MASS_GAP = "zero_importance_weight_mass"
 
 

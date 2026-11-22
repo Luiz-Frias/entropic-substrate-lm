@@ -4,7 +4,7 @@
 # Extracted out of run_container_test.sh so this derivation's own RUNTIME
 # behaviour — same worktree, same second, two DIFFERENT project names — is
 # directly testable by invoking this file as a subprocess twice
-# (tests/test_derive_compose_project.py), rather than only provable by
+# (tests/repo/test_derive_compose_project.py), rather than only provable by
 # grepping run_container_test.sh's source text. A text assertion can show a
 # token is present; it cannot show two invocations actually diverge.
 #
@@ -14,7 +14,7 @@
 #   PROJECT_FAMILY   stable per WORKTREE (basename + full-toplevel-path
 #                     hash) — IDENTICAL across every invocation from the same
 #                     worktree, concurrent or sequential. This is the
-#                     identity tests/helpers.py's assert_no_foreign_mlflow_stack
+#                     identity tests/support/helpers.py's assert_no_foreign_mlflow_stack
 #                     uses to recognise "another run of MINE" (same family,
 #                     tolerate briefly) versus a genuinely foreign worktree's
 #                     stack (different family, refuse immediately) — defects
@@ -79,7 +79,7 @@ PROJECT_FAMILY="entropic-substrate-lm-mlflow-test-${SANITIZED_WORKTREE}-${PATH_H
 # when that comment was written: PROJECT is computed ONCE per
 # run_container_test.sh invocation and EXPORTED as MLFLOW_COMPOSE_PROJECT —
 # the EXIT trap (same shell), pytest's phase-2/3 fixtures, and
-# tests/test_mlflow_live.py's own `podman compose -p` calls all READ that
+# tests/live/test_mlflow_live.py's own `podman compose -p` calls all READ that
 # exported value; nothing re-derives it from scratch. So this process's own
 # PID is safe to fold in.
 #

@@ -513,7 +513,7 @@ class Trainer:
                 # per batch (once for `z` inside `LanguageModel.forward`,
                 # once here). MEASURED before the fix, by counting
                 # `FieldEncoder._encode` calls across `evaluate(num_batches=
-                # 3)`: 6 calls, now 3 (tests/test_field_calibration.py::
+                # 3)`: 6 calls, now 3 (tests/unit/kernel/runtime/test_field_calibration.py::
                 # test_evaluate_runs_the_field_encoder_exactly_once_per_batch).
                 #
                 # This also drops the `autocast(enabled=False)` island that

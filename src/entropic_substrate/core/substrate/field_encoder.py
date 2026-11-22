@@ -102,7 +102,7 @@ class FieldEncoding(NamedTuple):
     rather than a bare 2-tuple keeps the two channels named at every call
     site — and keeps ``forward`` the module's single entry point, so the
     injection path still goes through ``nn.Module.__call__`` (hooks fire;
-    ``tests/test_field_encoder.py``'s anti-leakage hook test depends on
+    ``tests/unit/core/substrate/test_field_encoder.py``'s anti-leakage hook test depends on
     exactly that).
 
     ``logits``: ``(B, T, 256)`` pre-softmax, AMBIENT dtype — deliberately
@@ -309,7 +309,7 @@ class FieldEncoder(nn.Module):
         (``docs/e1-5c-preregistration.md``). Because the body depends only on
         ``field_d_model``, that shared field transfers to every arm at every
         backbone width. Guard teeth in
-        ``tests/test_frozen_field_sharing.py``.
+        ``tests/unit/core/substrate/test_frozen_field_sharing.py``.
 
         Wire format: ``{"format_version": ..., "model": <FieldEncoder.state_
         dict()>}`` — a checkpoint scoped to THIS module alone (not a full

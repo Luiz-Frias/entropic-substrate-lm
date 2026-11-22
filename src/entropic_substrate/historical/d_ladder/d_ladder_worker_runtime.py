@@ -10,7 +10,7 @@ same dotted name unchanged. p10 (ruling P10-WORKER-SPLIT, 2026-09-24) moved
 `worker_resource_registration` to
 `entropic_substrate.ladder.run.worker.resource_registration`, re-exported here
 by identity; `build_worker_factory` and `verify_worker_source` stay until p12
-because `tests/test_d_ladder_worker_runtime.py` monkeypatches
+because `tests/unit/historical/d_ladder/test_d_ladder_worker_runtime.py` monkeypatches
 `build_torch_cuda_adapters` on this module.
 """
 

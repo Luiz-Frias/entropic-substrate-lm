@@ -5,7 +5,7 @@ DESIGN-GATE RULING D1, conductor 2026-09-21, wf_bc9ada06-18e): this module
 STAYS quarantined (``landed: false`` — a shim has ONE target while this
 module's names are consumed from the old prefix by out-of-envelope
 importers rewrite-on-arrival forbids this phase from touching, e.g.
-``tests/test_mlflow_live.py:28`` imports ``build_sink`` and
+``tests/live/test_mlflow_live.py:28`` imports ``build_sink`` and
 ``MLFLOW_TRACKING_ENV`` from ``entropic_substrate.sinks``). p3b EXTRACTED
 the port, the three E-series adapters and the run-descriptor door into
 their landed homes and rewrote this module's body into a thin re-export
@@ -17,7 +17,7 @@ facade over those landed addresses:
   (was ``sinks.py:233``)
 * :class:`~entropic_substrate.ladder.capture.adapters.mlflow.MlflowSink`
   (was ``sinks.py:341``) — the psutil/pynvml-avoidance guard
-  (``tests/test_sinks.py``) now reads that module's own ``__file__``, not
+  (``tests/unit/ladder/capture/reader/test_sinks.py``) now reads that module's own ``__file__``, not
   this one's.
 * :class:`~entropic_substrate.ladder.capture.adapters.composite.CompositeSink`
   and :func:`~entropic_substrate.ladder.capture.adapters.composite.build_sink_for_run`
@@ -76,7 +76,7 @@ from entropic_substrate.ladder.capture.ports.run_descriptor import (
 
 if TYPE_CHECKING:
     # Annotation only. `core.sentence.profile` loads torch; this module must not
-    # (tests/test_h_run_descriptor.py pins that `import ...reader.sinks` leaves torch out).
+    # (tests/unit/ladder/run/test_h_run_descriptor.py pins that `import ...reader.sinks` leaves torch out).
     from entropic_substrate.core.sentence.profile import HProfile
 
 __all__ = [
@@ -236,7 +236,7 @@ def h_config_hash(profile: HProfile) -> str:
     Computed from ``profile.manifest`` (the dict ``identity`` itself hashes) with the same
     serialization as ``identity`` (sorted keys, compact separators). Changing it silently
     would split every seed group across image builds; a golden value pins it in
-    ``tests/test_h_run_descriptor.py``. Same 12 lowercase hex shape as :func:`config_hash`,
+    ``tests/unit/ladder/run/test_h_run_descriptor.py``. Same 12 lowercase hex shape as :func:`config_hash`,
     which ``mlflow_aggregate``'s boundary regex requires.
 
     Deliberately NOT in ``__all__``: that tuple is the pinned 18-name compat surface.

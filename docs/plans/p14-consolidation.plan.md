@@ -160,7 +160,7 @@ files]`. That makes it the identity rail. The ruled identity list names 13 files
 2. **One owner per file inside a wave.** Zero files are shared inside any `parallel_group`
    `[M, overlap matrix]`. Two files cross waves and resolve serial-after by wave order:
    `kernel/verdict/d1_evaluation_values.py`, owned by `p14-t-trainer` and edited later by
-   `p14-j-kernel-capture`; `tests/test_d_ladder_remote.py`, owned by `p14-t-historical` and edited
+   `p14-j-kernel-capture`; `tests/unit/historical/d_ladder/test_d_ladder_remote.py`, owned by `p14-t-historical` and edited
    later by `p14-t-dead`. A file shared by two phases of one wave is a HALT, never a note.
 3. **Adoption is partitioned by package.** Each strict_json adoption phase owns one package set:
    `p14-j-register` owns `ladder/{register,gate}`, `p14-j-kernel-capture` owns `kernel` and
@@ -169,7 +169,7 @@ files]`. That makes it the identity rail. The ruled identity list names 13 files
    2 / 8 / 7 / 17, with the identity-exempt `ladder/capture/capture.py` and `ladder/run/journal.py`
    in no phase `[M]`.
 4. **Identity-bearing files belong to the rail only.** No lane but `p14-z-identity` may change the
-   bytes of a tuple member, and that lane never edits `tests/test_identity_epoch.py`: the conductor
+   bytes of a tuple member, and that lane never edits `tests/unit/core/observation/test_identity_epoch.py`: the conductor
    re-pins once with `tools/regime_rows.py`. Identity-bearing JSON sites are exempt from extraction
    altogether, ruling 5.
 5. **The strict_json API freezes at the rail.** `p14-r1-strict-json` owns it as a door; adoption
@@ -290,7 +290,7 @@ grep -rnE 'D1RunReader|ladder_analysis' src/entropic_substrate/ladder/run/runner
 ```
 
 `D1RunReader` has zero `src` constructors at the epoch; its only users are the three calls in
-`tests/test_ladder_analysis.py` `[M, grep]`. `ladder_filing` and `ladder_predecessor` import
+`tests/unit/ladder/analyze/test_ladder_analysis.py` `[M, grep]`. `ladder_filing` and `ladder_predecessor` import
 `ScientificRunReader`, a different class.
 
 <a id="p14-j-run"></a>
@@ -327,13 +327,13 @@ House rule 5: break the guarded thing and show the test go RED, both arms in the
 
 | phase | mutation | must go RED |
 | --- | --- | --- |
-| r1 | accept a duplicate key; accept `NaN`; accept uppercase hex; return from `fail` instead of raising | `tests/test_strict_json.py`, each arm |
+| r1 | accept a duplicate key; accept `NaN`; accept uppercase hex; return from `fail` instead of raising | `tests/unit/kernel/codec/test_strict_json.py`, each arm |
 | t-local | drop the `__post_init__` coercion | a YAML-list betas test expecting a float tuple |
 | j-register, j-kernel-capture, j-analyze-review-file, j-run | re-add one local `def _pairs` in the owned packages | that phase's `tests/test_strict_json_adoption_<pkg>.py` AST guard |
 | same four | wire one site's `fail` to a different exception type | the site's existing codec test asserting its exception type |
 | t-composition | add a seventh `if args.command` branch in `main()` | an AST test counting dispatch branches in `main()` |
 | t-trainer | change one payload field inside the shared failure helper | both the fresh and the resume failure tests |
-| t-historical | delete the cleanup on failure | the RED-first partial-materialization test in `tests/test_d_ladder_remote.py` |
+| t-historical | delete the cleanup on failure | the RED-first partial-materialization test in `tests/unit/historical/d_ladder/test_d_ladder_remote.py` |
 | t-campaign | drop `max_power_gap_seconds` from `restore` | a resume-with-power-registration test raising `TypeError` |
 | t-capture-sink | re-enter `create_run` after a tag timeout | a fake-client test asserting exactly one `create_run` |
 | t-capture-sink | make a non-cold `log_param` failure warn instead of raise | the startup-abort test expecting `MlflowStartupError` |
@@ -343,7 +343,7 @@ House rule 5: break the guarded thing and show the test go RED, both arms in the
 | j-analyze-review-file | restore the `(int, float)` pre-filter | a `D1CosineGap` test expecting `D1TelemetryGap` |
 | t-verdict-vocab | construct `D1Contrast(decision="MAYBE", ...)` | the `__post_init__` rejection test |
 | z-identity | fail `os.open` at the second descent step | a descriptor-accounting test: no leak, no double close |
-| z-identity | type a regime-row digest instead of measuring it | `tests/test_identity_epoch.py` regime-row tests |
+| z-identity | type a regime-row digest instead of measuring it | `tests/unit/core/observation/test_identity_epoch.py` regime-row tests |
 
 ---
 
@@ -445,7 +445,7 @@ Also settled before the interview: FOR-1581 CANCELED as a byte-identical duplica
 | DN-1614-READ-OLD | Only if the FOR-1614 audit finds untrimmed persisted records: the read-old window for them. |
 | DN-1632-SEAM (2026-10-06) | FOR-1632: `closure/d1_runpod_billing_parser.py` keeps its local hooks because the strict-JSON door has no `parse_float` seam (billed amounts are `Decimal`); ruling W4-21 retained it and left the acceptance count at "falls by 16". Amend the door with a `parse_float` seam, or keep the one holdout. **RULED 2026-10-08 (operator): amend the door with the `parse_float` seam; the holdout is not retained.** FOR-1632 -> Todo with the scope; one small serial lifecycle off the merged trunk. |
 | DN-1626-REPOINT (2026-10-05/06) | FOR-1626: three BOUNDARY SHA sites stay on `require_sha256_hex_any_case` by rulings W1-16, W3-21 and W4-26 (`d1_registered_design` blob_sha256, `d1_primitives` encoder-initialization digest, `d1_trainer_object_transport` attempt/request digests); the repoint changes a caller-visible exception type at two of them. Repoint with the tests restated, or keep. **RULED 2026-10-08 (operator): repoint all three sites with their tests restated**, exception-type changes pinned, audit rows 39/71/93-94 removed and the header restated 33/57/57/0 (conductor rulings R1-R6, 2026-10-08; the earlier wording "-> `repointed`" is retracted). FOR-1626 reopened (it was Done while row 71 was still retained); one small serial lifecycle off the merged trunk. |
-| DN-1633-HOOK (2026-10-07) | FOR-1633: the commit-msg gitlint hook blocked over-length messages from an interactive shell but let four agent commits through this sprint (mechanism not isolated; repro recipe on the ticket). A `.pre-commit-config.yaml` or hook-install change is operator-ruled. **RULED 2026-10-08 (operator): repair the root cause.** Root cause MEASURED 2026-10-08 by the conductor: the global `exclude` in `.pre-commit-config.yaml` began with `\.git/`; prek applies it to the commit-msg stage's only file, the path git hands the hook, which is `.git/COMMIT_EDITMSG` when `git commit` starts at the repository root (gitdir relative) and an absolute path from a subdirectory or a linked worktree (gitdir absolute). From the root both commitizen and gitlint reported `(no files to check) Skipped` (reproduced with the installed hook on `.git/COMMIT_EDITMSG`: rc=0; the same file by an absolute path: gitlint FAILED rc=1); the four fail-open commits were all made from the root, the one agent commit whose hooks ran was made from a shell that had drifted into a subdirectory. Fix: drop the `\.git/` entry (git never stages anything under `.git/`, so it was inert for every other stage), pinned RED-first by `tests/test_commit_msg_hook_sees_message.py`; published as its own PR. The interim per-stage `gitlint --msg-filename` clause stays harmless. |
+| DN-1633-HOOK (2026-10-07) | FOR-1633: the commit-msg gitlint hook blocked over-length messages from an interactive shell but let four agent commits through this sprint (mechanism not isolated; repro recipe on the ticket). A `.pre-commit-config.yaml` or hook-install change is operator-ruled. **RULED 2026-10-08 (operator): repair the root cause.** Root cause MEASURED 2026-10-08 by the conductor: the global `exclude` in `.pre-commit-config.yaml` began with `\.git/`; prek applies it to the commit-msg stage's only file, the path git hands the hook, which is `.git/COMMIT_EDITMSG` when `git commit` starts at the repository root (gitdir relative) and an absolute path from a subdirectory or a linked worktree (gitdir absolute). From the root both commitizen and gitlint reported `(no files to check) Skipped` (reproduced with the installed hook on `.git/COMMIT_EDITMSG`: rc=0; the same file by an absolute path: gitlint FAILED rc=1); the four fail-open commits were all made from the root, the one agent commit whose hooks ran was made from a shell that had drifted into a subdirectory. Fix: drop the `\.git/` entry (git never stages anything under `.git/`, so it was inert for every other stage), pinned RED-first by `tests/repo/test_commit_msg_hook_sees_message.py`; published as its own PR. The interim per-stage `gitlint --msg-filename` clause stays harmless. |
 | DN-1573-DVC (2026-10-07) | FOR-1573's persisted-verdict audit is PARTIAL: `results/captured.dvc` (30 of 76 files), `results/h-image-publication-3b93854.dvc` and `results/field-pretrain-s42.jsonl.dvc` were never fetched. Authorize `dvc pull` of the three pointers and a re-run of the quoted audit script, or accept the zero over the scanned set. **RULED 2026-10-08 (operator): `dvc pull` authorized, pulled bytes removed from local storage once recorded.** Done 2026-10-08: pull 14:34:32-14:34:44Z (38 fetched + 43 added), audit re-run byte-identical at `da4d35c` 14:35:39-14:35:50Z: 0 artifacts / 0 out-of-vocabulary / 0 unreadable over the now-COMPLETE scan set, control still detects; completion addendum appended to `docs/plans/measurements/p14-verdict-vocab-audit.txt`; FOR-1573 stays Done, the audit is no longer PARTIAL. |
 
 **Post-merge state (2026-10-08):** the operator merged the thirteen drafts `--no-ff` in one sweep

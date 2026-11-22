@@ -41,7 +41,7 @@ __all__ = [
 # them equal to the writer's admitted set.
 EVALUATION_SCHEMAS = ("h-predictive-evaluation-v1", "h-predictive-evaluation-v2")
 # The closed proposal vocabulary of the v2 record and the closed latent-usage operand vocabulary,
-# each pinned equal to its writer-side Literal/StrEnum by tests/test_h_metric_extractor_l4d.py.
+# each pinned equal to its writer-side Literal/StrEnum by tests/unit/ladder/run/test_h_metric_extractor_l4d.py.
 PROPOSALS = ("q", "prior", "mixture")
 LATENT_OPERANDS = ("posterior_mean", "draw_average")
 
