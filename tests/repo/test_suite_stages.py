@@ -335,8 +335,8 @@ def test_a_stack_push_also_names_every_unpushed_branch_on_the_same_line(tmp_path
     _branch(repo, "sibling", "main")
     _g(repo, "update-ref", "refs/remotes/origin/main", "main")
     assert stages.pushed_commits(repo, stdin_lines=[], to_ref=bottom) == [bottom, top]
-    _g(repo, "update-ref", "refs/remotes/origin/top", top)  # top is already published
-    assert stages.pushed_commits(repo, stdin_lines=[], to_ref=bottom) == [bottom]
+    _g(repo, "update-ref", "refs/remotes/origin/top", top)  # the whole line is published
+    assert stages.pushed_commits(repo, stdin_lines=[], to_ref=bottom) == []
 
 
 def test_the_push_gate_refuses_when_any_pushed_tree_has_a_failed_record(tmp_path: Path) -> None:
@@ -368,3 +368,38 @@ def test_an_export_records_the_tree_of_the_commit_it_was_given(tmp_path: Path) -
     record = stages.run_in_export(repo, "post-commit", commit=one, run=fake)
     assert record.tree == _g(repo, "rev-parse", f"{one}^{{tree}}")
     assert seen and not seen[0].exists()  # the export is gone afterwards
+
+
+# --- found by the first real push through the new gate (2026-11-21) ---------
+#
+# The push listed four branches; the gate exported the BOTTOM one, a commit
+# already on the remote whose layout predates tests/unit, and pytest found
+# nothing to run. Two rules follow.
+
+
+def test_a_commit_the_remote_already_has_is_not_verified_again(tmp_path: Path) -> None:
+    repo = _tmp_repo(tmp_path)
+    bottom = _branch(repo, "bottom", "main")
+    top = _branch(repo, "top", "bottom")
+    _g(repo, "update-ref", "refs/remotes/origin/main", "main")
+    _g(repo, "update-ref", "refs/remotes/origin/bottom", bottom)
+    zero = "0" * 40
+    lines = [
+        f"refs/heads/bottom {bottom} refs/heads/bottom {bottom}",
+        f"refs/heads/top {top} refs/heads/top {zero}",
+    ]
+    assert stages.pushed_commits(repo, stdin_lines=lines, to_ref=None) == [top]
+    assert stages.pushed_commits(repo, stdin_lines=[], to_ref=bottom) == [top]
+    _g(repo, "update-ref", "refs/remotes/origin/top", top)
+    assert stages.pushed_commits(repo, stdin_lines=lines, to_ref=None) == []
+
+
+def test_a_commit_older_than_the_stage_table_is_named_not_judged_by_it(tmp_path: Path) -> None:
+    repo = _tmp_repo(tmp_path)
+    before = _g(repo, "rev-parse", "HEAD")
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "suite_stages.py").write_text("# table\n", encoding="utf-8")
+    _g(repo, "add", "-A")
+    _g(repo, "commit", "-q", "-m", "table arrives")
+    after = _g(repo, "rev-parse", "HEAD")
+    assert stages.split_by_gate(repo, [before, after]) == ([after], [before])

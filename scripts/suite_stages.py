@@ -264,20 +264,44 @@ def pushed_commits(repo: Path, *, stdin_lines: Sequence[str], to_ref: str | None
         for fields in (line.split() for line in stdin_lines)
         if len(fields) == PUSH_FIELDS and fields[1] != ZERO_OID
     ]
+
+    def unpublished(commit: str) -> bool:
+        return bool(_git(repo, "rev-list", "-1", commit, "--not", "--remotes"))
+
+    # MEASURED 2026-11-21: a stacked push lists every branch, including ones
+    # the remote already has; a commit with nothing unpublished carries no
+    # new code and is not verified again.
     if listed:
-        return list(dict.fromkeys(listed))
+        return [commit for commit in dict.fromkeys(listed) if unpublished(commit)]
     if not to_ref:
         return [_git(repo, "rev-parse", "HEAD")]
     primary = _git(repo, "rev-parse", f"{to_ref}^{{commit}}")
-    commits = [primary]
+    commits = [primary] if unpublished(primary) else []
     for head in _git(repo, "for-each-ref", "--format=%(objectname)", "refs/heads").split():
-        if head in commits or not _git(repo, "rev-list", "-1", head, "--not", "--remotes"):
+        if head in commits or head == primary or not unpublished(head):
             continue
         if _git_ok(repo, "merge-base", "--is-ancestor", head, primary) or _git_ok(
             repo, "merge-base", "--is-ancestor", primary, head
         ):
             commits.append(head)
     return commits
+
+
+def split_by_gate(repo: Path, commits: Sequence[str]) -> tuple[list[str], list[str]]:
+    """Commits this table can judge, and commits older than the table itself.
+
+    The stage table names folders. A commit from before the table existed
+    has a different layout, so running the table against it tests nothing
+    (MEASURED 2026-11-21: `9 warnings in 8.97s`, no test collected). Such a
+    commit is NAMED and left to CI; every commit descended from the one that
+    added this file is judged.
+    """
+    judged: list[str] = []
+    older: list[str] = []
+    for commit in commits:
+        has_table = _git_ok(repo, "cat-file", "-e", f"{commit}:scripts/suite_stages.py")
+        (judged if has_table else older).append(commit)
+    return judged, older
 
 
 def verify_all(store: Path, trees: Iterable[str], *, rerun: Callable[[str], bool]) -> list[str]:
@@ -472,6 +496,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     # The full unit + e2e run goes to every commit the push NAMED, and to HEAD
     # when the push carries it; a branch added only because it shares the
     # stack line gets the record check (the full run for it is CI's).
+    commits, older = split_by_gate(repo, commits)
+    for commit in older:
+        _say(f"pre-push: {commit[:12]} predates the stage table; left to CI, not judged here")
+    if not commits:
+        _say("pre-push: no unpublished commit to verify")
+        return 0
     named = commits if lines or not to_ref else commits[:1]
     full_for = [*named, *([head] if head in commits and head not in named else [])]
     return 0 if push_gate(repo, commits, full_for=full_for) else 1
