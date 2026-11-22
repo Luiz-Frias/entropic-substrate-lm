@@ -75,6 +75,21 @@ def test_probe_fails_when_a_bound_field_never_reaches_the_tape(tmp_path: Path) -
     assert "field" in result.detail
 
 
+def test_probe_fails_when_the_emitter_adds_a_second_unrelated_row(tmp_path: Path) -> None:
+    # Review round 1 (PR 440): a row filter by event name let a second,
+    # unrelated emission through, so two emissions read as one.
+    real = smoke.emitter_of(ACTIVE)
+
+    def chatty(level: str, event: str, **fields: object) -> None:
+        real(level, event, **fields)
+        logger.bind(event="unrelated.event").info("an extra line nobody asked for")
+
+    result = smoke.probe(ACTIVE, tmp_path / "tape.jsonl", emit=chatty)
+
+    assert not result.ok
+    assert "2 rows" in result.detail
+
+
 def test_run_with_nothing_active_is_refused_not_green(capsys: pytest.CaptureFixture[str]) -> None:
     assert smoke.run("active", paths=()) == smoke.EXIT_NOTHING_EXAMINED
     assert "nothing" in capsys.readouterr().err

@@ -138,10 +138,13 @@ def emitter_of(entry: SeriesPath) -> Emit:
 
 
 def _mismatch(rows: list[dict[str, object]], stderr: str, event: str, sentence: str) -> str:
-    hits = [row for row in rows if row.get("event") == event]
-    if len(hits) != 1:
-        return f"tape holds {len(hits)} rows for {event}, expected 1"
-    row = hits[0]
+    # Count the whole tape, not only rows naming the event: a filter by event
+    # hid a second, unrelated emission (review round 1, PR 440).
+    if len(rows) != 1:
+        return f"tape holds {len(rows)} rows, expected 1 for {event}"
+    row = rows[0]
+    if row.get("event") != event:
+        return f"tape row carries event {row.get('event')!r}, expected {event!r}"
     lost = sorted(key for key, value in PROBE_FIELDS.items() if row.get(key) != value)
     if lost:
         return f"field(s) missing or changed on the tape: {lost}"
