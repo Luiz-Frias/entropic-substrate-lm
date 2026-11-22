@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.3](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.12.2...v0.12.3) (2026-11-22)
+
+
+### Documentation
+
+* **identity:** update path refs and regime digests ([9edb1db](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/9edb1dbce6f6e4cdf3c15aa8d973ea9a0ccffa8e))
+* **identity:** update path refs and regime digests ([#442](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/442)) ([c161a03](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/c161a032c3c282d5418385bd7e1d98fc9e3583a0))
+
 ## [0.12.2](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.12.1...v0.12.2) (2026-11-22)
 
 
