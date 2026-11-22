@@ -99,7 +99,7 @@ def changed_files(repo: Path, base: str) -> list[str]:
         done = subprocess.run(  # nosec B603 B607 -- git from PATH by design, fixed argv plus one validated revision
             ["git", *args], cwd=repo, check=True, capture_output=True, text=True
         )
-        return done.stdout.strip()
+        return done.stdout
 
     def recipe_at(revision: str) -> str:
         shown = subprocess.run(  # nosec B603 B607 -- git from PATH by design, fixed argv plus one resolved commit
@@ -111,7 +111,7 @@ def changed_files(repo: Path, base: str) -> list[str]:
         )
         return recipe_text(shown.stdout, GATE_RECIPE) if shown.returncode == 0 else ""
 
-    merge_base = git("merge-base", "HEAD", base)
+    merge_base = git("merge-base", "HEAD", base).strip()
     # --no-renames: with rename detection a moved file is reported under its
     # NEW path only, so renaming compose.yaml away would hide that it left.
     # -z: NUL-separated and unquoted. Without it git C-quotes a non-ASCII

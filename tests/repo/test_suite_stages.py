@@ -410,3 +410,35 @@ def test_a_non_ascii_staged_path_is_read_unquoted(tmp_path: Path) -> None:
     (repo / "é.txt").write_text("x\n", encoding="utf-8")
     _g(repo, "add", "-A")
     assert stages._staged(repo) == ["é.txt"]
+
+
+# --- review round 3 (PR 439) ------------------------------------------------
+
+
+def test_a_suite_lock_refusal_is_not_recorded_as_a_failed_tree(tmp_path: Path) -> None:
+    # Another session holding the host suite lock makes pytest exit 75 before
+    # collection. That says nothing about the tree; a failed record would
+    # refuse it at every later push, reword included.
+    repo = _tmp_repo(tmp_path)
+    tree = _g(repo, "rev-parse", "HEAD^{tree}")
+
+    def locked(stage: stages.Stage, *, cwd: Path, src: Path) -> tuple[bool | None, str]:
+        return None, "suite lock held"
+
+    record = stages.run_in_export(repo, "post-commit", run=locked)
+    assert record.passed is False
+    assert stages.read_record(stages._store(repo), tree) is None
+
+
+def test_the_lock_exit_code_maps_to_not_judged_and_any_other_failure_to_failed() -> None:
+    assert stages.outcome(0) is True
+    assert stages.outcome(1) is False
+    assert stages.outcome(stages.EX_TEMPFAIL) is None
+    assert stages.EX_TEMPFAIL == 75
+
+
+def test_a_staged_path_keeps_its_leading_whitespace(tmp_path: Path) -> None:
+    repo = _tmp_repo(tmp_path)
+    (repo / " odd.txt").write_text("x\n", encoding="utf-8")
+    _g(repo, "add", "-A")
+    assert stages._staged(repo) == [" odd.txt"]

@@ -175,3 +175,10 @@ def test_a_non_ascii_live_path_is_matched_not_quoted_away(tmp_path: Path) -> Non
     changed = ship_scope.changed_files(repo, "main")
     assert "tests/live/test_é.py" in changed
     assert ship_scope.decide(changed)[0] == ship_scope.EXIT_NEEDS_FULL
+
+
+def test_a_changed_path_keeps_its_leading_whitespace(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / " odd.txt").write_text("x\n", encoding="utf-8")
+    _commit(repo)
+    assert " odd.txt" in ship_scope.changed_files(repo, "main")

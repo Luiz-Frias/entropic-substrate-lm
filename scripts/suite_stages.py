@@ -47,6 +47,9 @@ TREE_HEX = 40
 # Folders no local stage runs: they need the live MLflow stack, which only
 # `just ship-it-full` (scripts/run_container_test.sh) brings up.
 FULL_TIER_ONLY = ("live",)
+# tests/suite_lock.py exits pytest with this (sysexits EX_TEMPFAIL) when another
+# session holds the host suite lock. It is "try again", not a verdict on the tree.
+EX_TEMPFAIL = 75
 PARALLEL = ("-q", "--maxfail=1", "--disable-warnings", "-n", "auto", "--dist", "loadfile")
 
 
@@ -214,14 +217,21 @@ def _clean_env() -> dict[str, str]:
     return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
 
 
-def _git(repo: Path, *args: str, keep_index: bool = False) -> str:
+def outcome(returncode: int) -> bool | None:
+    """True passed, False failed, None not judged (the suite lock was held)."""
+    if returncode == EX_TEMPFAIL:
+        return None
+    return returncode == 0
+
+
+def _git(repo: Path, *args: str, keep_index: bool = False, raw: bool = False) -> str:
     env = _clean_env()
     if keep_index and "GIT_INDEX_FILE" in os.environ:
         env["GIT_INDEX_FILE"] = os.environ["GIT_INDEX_FILE"]
     done = subprocess.run(  # nosec B603 B607 -- git from PATH by design, fixed argv
         ["git", *args], cwd=repo, env=env, check=True, capture_output=True, text=True
     )
-    return done.stdout.strip()
+    return done.stdout if raw else done.stdout.strip()
 
 
 def _git_ok(repo: Path, *args: str) -> bool:
@@ -242,7 +252,9 @@ def _staged(repo: Path) -> list[str]:
     # TEMPORARY index through GIT_INDEX_FILE; the ordinary index would show
     # nothing staged and the stage would skip every unit test.
     # -z: unquoted names, so a non-ASCII path still maps to its folder.
-    listing = _git(repo, "diff", "--cached", "--name-only", "--no-renames", "-z", keep_index=True)
+    listing = _git(
+        repo, "diff", "--cached", "--name-only", "--no-renames", "-z", keep_index=True, raw=True
+    )
     return [name for name in listing.split("\0") if name]
 
 
@@ -323,7 +335,7 @@ def _live_trees(repo: Path) -> set[str]:
     return {_git(repo, "rev-parse", ref) for ref in [*heads, "HEAD^{tree}"]}
 
 
-def run_stage(stage: Stage, *, cwd: Path, src: Path) -> tuple[bool, str]:
+def run_stage(stage: Stage, *, cwd: Path, src: Path) -> tuple[bool | None, str]:
     """Run one stage's tests in ``cwd`` against the package under ``src``."""
     env = _clean_env()
     env["PYTHONPATH"] = str(src)
@@ -339,7 +351,10 @@ def run_stage(stage: Stage, *, cwd: Path, src: Path) -> tuple[bool, str]:
     summary = lines[-1] if lines else f"pytest exit {done.returncode}, no output"
     if done.returncode:
         sys.stderr.write(done.stdout[-6000:] + done.stderr[-2000:])
-    return done.returncode == 0, summary
+    verdict = outcome(done.returncode)
+    if verdict is None:
+        summary = "not judged: another session holds the suite lock (exit 75), try again"
+    return verdict, summary
 
 
 def link_dvc_data(repo: Path, export: Path) -> list[str]:
@@ -369,8 +384,8 @@ def export_run(
     stage: Stage,
     commit: str,
     *,
-    run: Callable[..., tuple[bool, str]] = run_stage,
-) -> tuple[bool, str]:
+    run: Callable[..., tuple[bool | None, str]] = run_stage,
+) -> tuple[bool | None, str]:
     """Run a stage against a throwaway worktree of ``commit``."""
     scratch = Path(tempfile.mkdtemp(prefix="suite-export-"))
     export = scratch / "tree"
@@ -401,7 +416,7 @@ def run_in_export(
     stage_name: str,
     *,
     commit: str | None = None,
-    run: Callable[..., tuple[bool, str]] = run_stage,
+    run: Callable[..., tuple[bool | None, str]] = run_stage,
 ) -> Record:
     """Run a stage against a throwaway worktree of a commit and record the result."""
     # Resolved ONCE, and the tree derived from that commit: two reads of HEAD
@@ -409,8 +424,13 @@ def run_in_export(
     commit = _git(repo, "rev-parse", f"{commit or 'HEAD'}^{{commit}}")
     tree = _git(repo, "rev-parse", f"{commit}^{{tree}}")
     passed, summary = export_run(repo, STAGES[stage_name], commit, run=run)
-    record = Record(tree, stage_name, passed, summary)
-    write_record(_store(repo), record)
+    record = Record(tree, stage_name, bool(passed), summary)
+    # A lock refusal is not a result: leave the record ABSENT so the next
+    # post-commit or pre-push runs the stage, instead of a failed record that
+    # would refuse this tree forever (records are keyed by tree, so even a
+    # reword keeps it).
+    if passed is not None:
+        write_record(_store(repo), record)
     return record
 
 
@@ -490,7 +510,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "post-commit":
         record = run_in_export(repo, "post-commit")
-        verdict = "PASS" if record.passed else "FAIL (the next push will refuse this tree)"
+        recorded = read_record(_store(repo), record.tree) is not None
+        verdict = (
+            "PASS"
+            if record.passed
+            else "FAIL (the next push will refuse this tree)"
+            if recorded
+            else "NOT RECORDED (the next push will run it)"
+        )
         _say(f"post-commit {verdict} for tree {record.tree[:12]}: {record.summary}")
         return 0
 
