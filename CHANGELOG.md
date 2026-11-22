@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.12.2](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.12.1...v0.12.2) (2026-11-22)
+
+
+### Code Refactoring
+
+* **tests:** reorganize test suite into tiered layout ([406d7e1](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/406d7e1aae9bf7586a5b34502e49be0645b58e4e))
+* **tests:** reorganize test suite into tiered layout ([c0a2a6d](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/c0a2a6dc5464571cd17573796c84b52d65d4abcf))
+* **tests:** reorganize test suite into tiered layout ([#437](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/437)) ([406d7e1](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/406d7e1aae9bf7586a5b34502e49be0645b58e4e))
+
+
+### Documentation
+
+* **tooling:** add bulk path-reference rewriter ([406d7e1](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/406d7e1aae9bf7586a5b34502e49be0645b58e4e))
+* **tooling:** add bulk path-reference rewriter ([12ff045](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/12ff045a4cd59fc182b3303ccebb9f28cc6a689a))
+
 ## [0.12.1](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.12.0...v0.12.1) (2026-11-04)
 
 
