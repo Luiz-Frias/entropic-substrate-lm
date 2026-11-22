@@ -11,13 +11,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from tests.integration.test_h_aggregate import REQUEST_A, write_h_run
 
 import evaluation_v2_fixtures as fx
 from entropic_substrate.ladder.analyze import h_aggregate, h_final_probe_checks
 from entropic_substrate.ladder.analyze.h_aggregate import HRun, load_h_run
 from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap
 from entropic_substrate.ladder.run import h_metric_extractor
+from h_run_fixtures import REQUEST_A, write_h_run
 
 pytestmark = pytest.mark.unit
 

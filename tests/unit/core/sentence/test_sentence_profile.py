@@ -7,34 +7,10 @@ import pytest
 
 import entropic_substrate.core.sentence.profile as profile_module
 from entropic_substrate.core.latent.dynamics import SolverConfig
-from entropic_substrate.core.sentence.codec import CodecSpec
-from entropic_substrate.core.sentence.law import LawSpec
-from entropic_substrate.core.sentence.profile import HProfile, OptimizationSpec, RunSchedule
-from entropic_substrate.core.sentence.records import content_identity
-from entropic_substrate.core.sentence.spine import SpineSpec
+from entropic_substrate.core.sentence.profile import HProfile, RunSchedule
+from sentence_fixtures import profile as profile
 
 pytestmark = pytest.mark.unit
-
-
-def profile() -> HProfile:
-    return HProfile(
-        name="h0-fisher-tiny",
-        stage="H0",
-        run_class="local_tiny",
-        source_digest=content_identity(("source-fixture",)),
-        seed=42,
-        source_seed=42,
-        device="cpu",
-        precision="fp32",
-        codec=CodecSpec(8, 1, 8, 1, 4, 64),
-        spine=SpineSpec(8, 2, 4, 4, "magnitude"),
-        law=LawSpec(8, "magnitude"),
-        consumer="fisher",
-        solver=SolverConfig(),
-        optimization=OptimizationSpec(0.001, 0.01, (0.9, 0.95), 1e-8, 1.0, 0.3),
-        schedule=RunSchedule(2, 4, 2, 2, 2, 1, (2, 4), 1, 2, 2, diagnostic_samples=8),
-        permutation=tuple(range(256)),
-    )
 
 
 def test_complete_profile_roundtrip_binds_every_mechanism_and_budget() -> None:

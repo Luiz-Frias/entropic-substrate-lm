@@ -98,7 +98,9 @@ hardware, topology capstones, and unregistered modality expansion are not implie
 mise trust && mise install   # pinned toolchain (python 3.12, uv, just, prek, ...)
 just setup                   # tools + uv sync --all-groups + prek hooks
 just check                   # quality gate: fmt-check + lint + typecheck + unit tests + lint-imports (= CI)
-just test                    # unit tests only (CPU, <60s)
+just test                    # every hermetic test, slow included (= what CI runs)
+just test-fast               # the same minus `slow`
+just test-stage pre-commit   # one hook stage by name; table in scripts/suite_stages.py
 just test-all                # unit + integration
 PYTHONPATH=src uv run pytest tests/unit/core/geometry/test_kappa_geometry.py::test_name -m unit   # single test
 just train exp=e1-fisher     # exp ∈ EXPERIMENTS in kernel/runtime/config.py; --tiny for a smoke run
@@ -106,6 +108,8 @@ just eval ckpt=models/e3-latest.pt
 just download-data           # enwik8 → data/, then: dvc add data/enwik8 && dvc push
 just container-build         # podman build (CUDA 12.6 image; deploy: docs/deploy-h100.md)
 just pc-ci                   # prek commit + pre-push stages (CI parity)
+just ship-it                 # static checks, submit, post step; refuses infra changes
+just ship-it-full            # check + live container gate, submit, post step
 ```
 
 mise loads `.env` into the environment; `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` there
@@ -127,11 +131,18 @@ correctly from this file. Whatever an agent must see belongs in `CLAUDE.md` itse
 prompt. It is gitignored, so only this checkout sees it; anything every clone must see
 still belongs here.)
 
-1. **Publish with `just ship-it`, never a bare `gt submit`.** The live gate is the only
-   thing in this repo that runs the MLflow stack: `tests/live/test_mlflow_live.py` `skipif`s
-   on `MLFLOW_TRACKING_URI`, so with no stack up the live tests **skip rather than
-   fail** — reporting success by testing nothing. CI runs no containers either. That
+1. **Publish with `just ship-it` or `just ship-it-full`, never a bare `gt submit`.** The
+   live gate is the only thing in this repo that runs the MLflow stack: the tests under
+   `tests/live` `skipif` on `MLFLOW_TRACKING_URI`, so with no stack up they **skip rather
+   than fail** — reporting success by testing nothing. CI runs no containers either. That
    gap is how the gate went red at `main` and stayed red under a green CI.
+   RETRACTED 2026-11-21 (operator ruling): "`ship-it` always runs the live gate". Slim
+   `ship-it` runs no containers; `scripts/ship_scope.py` makes it refuse, naming
+   `just ship-it-full`, when the stack touches compose, the image definition, dependency
+   files, the MLflow adapter or sinks, the container gate, `tests/live`, or the logging
+   substrate and the series emission paths (`ship-it-full` also runs the logger smoke inside the
+   pinned image). A bot's
+   dependency PR passes through neither recipe.
 
 2. **Probe sequentially. Never draw a conclusion from concurrent containers.** The
    podman VM is 4 vCPU / 4 GB. Several MLflow containers booting at once each import

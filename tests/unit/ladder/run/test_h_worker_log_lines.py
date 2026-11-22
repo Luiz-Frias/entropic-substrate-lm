@@ -55,6 +55,8 @@ from entropic_substrate.ladder.run.worker_transport import (
     publish_verified_object,
 )
 from latent_usage_support import POSTERIOR_MEAN
+from worker_log_fixtures import bind_logs as bind_logs
+from worker_log_fixtures import read_log as read_log
 
 pytestmark = pytest.mark.unit
 
@@ -67,24 +69,6 @@ _TERMINAL_MARKERS = {"complete", "paused", "stopped", "failure"}
 def log_file(tmp_path: Path) -> Path:
     """Where this test's structured log lands; ``bind_logs`` points the substrate at it."""
     return tmp_path / "obs" / "worker-log.jsonl"
-
-
-def bind_logs(path: Path) -> None:
-    """Re-bind the substrate's sinks to THIS test: current stderr + a JSON file.
-
-    Called in the test BODY, never from a fixture: MEASURED 2026-10-12 on
-    pytest 9.1.1, ``sys.stderr`` at fixture setup is not the object ``capsys``
-    reads at call time, so sinks bound by the autouse conftest fixture (or by
-    any fixture) write into a closed stream (the same reason
-    ``tests/unit/kernel/runtime/test_logging.py`` configures inside its tests).
-    """
-    configure_logging(json_path=path)
-
-
-def read_log(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text().splitlines() if line]
 
 
 def of(rows: list[dict[str, Any]], name: str) -> list[dict[str, Any]]:

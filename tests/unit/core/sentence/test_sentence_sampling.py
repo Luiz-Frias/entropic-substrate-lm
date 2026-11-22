@@ -8,26 +8,12 @@ import torch
 from entropic_substrate.core.sentence.boundary import SentenceByteCodec
 from entropic_substrate.core.sentence.corpus import (
     PreparationSpec,
-    PreparedCorpus,
     prepare_documents,
 )
-from entropic_substrate.core.sentence.records import SourceDocument
 from entropic_substrate.core.sentence.sampling import SamplingSpec, SentenceSampler
-from entropic_substrate.core.sentence.segmentation import SegmentationPolicy
+from sentence_fixtures import corpus as corpus
 
 pytestmark = pytest.mark.unit
-
-
-def corpus() -> PreparedCorpus:
-    return prepare_documents(
-        [
-            SourceDocument(
-                f"fixture-{i}", f"Item {i} is here. This is next. Then it ends.", "tiny-v1"
-            )
-            for i in range(30)
-        ],
-        PreparationSpec(30, 10000, "tiny-v1", segmentation=SegmentationPolicy(64)),
-    )
 
 
 def sampler(codec: SentenceByteCodec | None = None) -> SentenceSampler:

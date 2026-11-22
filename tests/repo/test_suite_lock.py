@@ -303,14 +303,32 @@ def test_cli_without_label_separator_and_command_is_a_usage_error(argv: list[str
     assert suite_lock.main(argv) == 2
 
 
-def test_ship_it_holds_the_lock_across_check_container_test_and_submit() -> None:
+@pytest.mark.parametrize(
+    ("recipe", "steps_in_order"),
+    [
+        ("ship-it", ("scripts/ship_scope.py", "just fmt-check", "gt submit", "just post-ship")),
+        (
+            "ship-it-full",
+            (
+                "just check",
+                "just container-test",
+                "just logger-smoke-image",
+                "gt submit",
+                "just post-ship",
+            ),
+        ),
+    ],
+)
+def test_each_ship_recipe_holds_the_lock_across_all_of_its_steps(
+    recipe: str, steps_in_order: tuple[str, ...]
+) -> None:
     justfile = (repo_paths.REPO_ROOT / "justfile").read_text(encoding="utf-8")
-    header = re.search(r"^ship-it:.*$", justfile, flags=re.MULTILINE)
-    assert header is not None and header.group(0) == "ship-it:", (
-        "prerequisites on ship-it run before its body, outside the lock"
+    header = re.search(rf"^{re.escape(recipe)}:.*$", justfile, flags=re.MULTILINE)
+    assert header is not None and header.group(0) == f"{recipe}:", (
+        f"prerequisites on {recipe} run before its body, outside the lock"
     )
-    body = justfile[header.end() : header.end() + 400].split("\n\n")[0]
-    held = body.split("tests/suite_lock.py ship-it --", 1)
-    assert len(held) == 2, "ship-it must run its steps under tests/suite_lock.py"
-    steps = [held[1].index(step) for step in ("just check", "just container-test", "gt submit")]
+    body = justfile[header.end() : header.end() + 500].split("\n\n")[0]
+    held = body.split(f"tests/suite_lock.py {recipe} --", 1)
+    assert len(held) == 2, f"{recipe} must run its steps under tests/suite_lock.py"
+    steps = [held[1].index(step) for step in steps_in_order]
     assert steps == sorted(steps)

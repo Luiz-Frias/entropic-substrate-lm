@@ -12,6 +12,7 @@ default_language_version:
   python: python3
 default_install_hook_types:
   - pre-commit
+  - post-commit
   - pre-push
   - commit-msg
   - prepare-commit-msg
@@ -157,19 +158,32 @@ repos:
   - repo: https://github.com/andrewaylett/pre-commit-hooks
     rev: v0.7.2
     hooks:
-      # Fast feedback: the fast unit tier on every commit (CPU, hermetic). `slow`
-      # runs at pre-push, `just check`, CI and `just ship-it`; tests/test_suite_tiers.py
-      # pins that none of those deselects it.
+      # The stage table is scripts/suite_stages.py: the folder says what KIND a
+      # test is, a marker says what it COSTS. Each hook names one stage and
+      # nothing calls pytest directly (pinned by tests/repo/test_suite_tiers.py).
+      #
+      # pre-commit: tests/unit, fast, scoped to the folders the staged paths
+      # mirror. Blocks the commit; pre-push runs the whole folder.
       - id: uv-run
-        name: python unit tests (uv)
+        name: suite stage pre-commit (tests/unit, fast, staged scope)
         stages: [pre-commit]
-        args: ["pytest", "-m", "unit and not slow", "-q", "--maxfail=1", "--disable-warnings", "-n", "auto", "--dist", "loadfile"]
+        args: ["python", "scripts/suite_stages.py", "pre-commit"]
 
-      # Pre-push: full suite (unit + integration) before code reaches remote
+      # post-commit: repo, integration, architecture, e2e, fault, fast, against a
+      # throwaway worktree of the commit. git ignores this stage's exit code, so
+      # it writes a record keyed by tree that the pre-push stage reads.
       - id: uv-run
-        name: python full test suite (uv)
+        name: suite stage post-commit (record for the push)
+        stages: [post-commit]
+        always_run: true
+        args: ["python", "scripts/suite_stages.py", "post-commit"]
+
+      # pre-push: tests/unit + tests/e2e including slow, then the post-commit
+      # record for the pushed tree (run now if absent, refuse if failed).
+      - id: uv-run
+        name: suite stage pre-push (unit + e2e in full, record check)
         stages: [pre-push]
-        args: ["pytest", "-q", "--maxfail=1", "--disable-warnings", "-n", "auto", "--dist", "loadfile"]
+        args: ["python", "scripts/suite_stages.py", "pre-push"]
 
   # =============================================================================
   # CONTAINERS

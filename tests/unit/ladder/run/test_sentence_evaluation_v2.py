@@ -17,8 +17,6 @@ from typing import Any
 
 import pytest
 import torch
-from tests.unit.core.sentence.test_sentence_execution import engine
-from tests.unit.ladder.run.test_h_worker_log_lines import bind_logs, read_log
 
 from entropic_substrate.core.sentence import scoring
 from entropic_substrate.core.sentence.codec import teacher_forcing_prefix
@@ -47,6 +45,8 @@ from entropic_substrate.ladder.run.h_metric_extractor import (
 from entropic_substrate.ladder.run.journal import artifact_reference, read_json, write_json
 from entropic_substrate.ladder.run.runner import read_training_progress, run_probe_training
 from latent_usage_support import POSTERIOR_MEAN
+from sentence_fixtures import engine
+from worker_log_fixtures import bind_logs, read_log
 
 pytestmark = pytest.mark.unit
 

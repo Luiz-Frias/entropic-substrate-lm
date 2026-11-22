@@ -8,7 +8,6 @@ import torch
 from tests.unit.core.sentence.test_sentence_profile import profile
 from tests.unit.core.sentence.test_sentence_sampling import corpus
 
-from entropic_substrate.core.sentence.corpus import SplitPolicy, prepare_documents
 from entropic_substrate.core.sentence.runtime_precision import (
     require_observed_execution_precision,
 )
@@ -17,24 +16,9 @@ from entropic_substrate.ladder.run import execution as runtime
 from entropic_substrate.ladder.run.checkpoint import save_checkpoint
 from entropic_substrate.ladder.run.execution import SentenceExecution
 from latent_usage_support import POSTERIOR_MEAN
+from sentence_fixtures import engine as engine
 
 pytestmark = pytest.mark.unit
-
-
-def engine(root: Path) -> SentenceExecution:
-    source = root / "source"
-    source.mkdir()
-    original = corpus()
-    prepared = prepare_documents(
-        original.candidates,
-        replace(original.spec, splits=SplitPolicy(validation_buckets=2000, test_buckets=1000)),
-    )
-    artifact = write_prepared_corpus(source, prepared, max_bytes=1_000_000)
-    return SentenceExecution(
-        replace(profile(), source_digest=artifact.content_hash.digest),
-        source,
-        max_source_bytes=1_000_000,
-    )
 
 
 def test_real_loop_reaches_both_phases_and_records_actual_source_exposure(tmp_path: Path) -> None:

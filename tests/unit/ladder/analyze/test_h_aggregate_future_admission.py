@@ -17,12 +17,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from tests.integration.test_h_aggregate import REQUEST_A, build_h_run_rows, write_h_run
-from tests.unit.core.sentence.test_sentence_profile import profile
 
 from entropic_substrate.core.sentence.profile import HProfile
 from entropic_substrate.ladder.analyze.h_aggregate import load_h_run
 from entropic_substrate.ladder.capture.reader.telemetry import TelemetryGap
+from h_run_fixtures import REQUEST_A, build_h_run_rows, write_h_run
+from sentence_fixtures import profile
 
 pytestmark = pytest.mark.unit
 
