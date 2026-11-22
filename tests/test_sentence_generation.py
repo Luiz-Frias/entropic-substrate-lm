@@ -39,6 +39,7 @@ def trained(root: Path) -> tuple[SentenceExecution, Path, ArtifactIdentity]:
     return template, output, result.receipt
 
 
+@pytest.mark.slow
 def test_generation_is_bound_to_training_and_retains_shadow_feedback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -74,6 +75,7 @@ def test_generation_is_bound_to_training_and_retains_shadow_feedback(
     assert report["scientific_authority"] == "none"
 
 
+@pytest.mark.slow
 def test_pending_generation_resumes_without_sampling_a_new_sentence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -112,6 +114,7 @@ def test_pending_generation_resumes_without_sampling_a_new_sentence(
     assert report["summary"]["sentences"] == ["A.", "B."] * 2
 
 
+@pytest.mark.slow
 def test_invalid_generated_utf8_remains_a_recorded_outcome(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -166,6 +169,7 @@ def test_generation_rejects_a_partial_training_receipt(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("mutation", ["prompt", "rng", "summary"])
 def test_rehashed_generation_forgery_is_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
@@ -218,6 +222,7 @@ def test_rehashed_generation_forgery_is_rejected(
     torch.testing.assert_close(torch.get_rng_state(), rng, atol=0, rtol=0)
 
 
+@pytest.mark.slow
 def test_unscripted_generation_matches_after_mid_sentence_resume(tmp_path: Path) -> None:
     template, output, training = trained(tmp_path)
     arguments = {"max_source_bytes": 1_000_000, "max_artifact_bytes": LIMIT}
@@ -387,6 +392,7 @@ def _law_only(report: dict[str, object]) -> list[dict[str, object]]:
     ]
 
 
+@pytest.mark.slow
 def test_receipt_v3_records_every_continuation_with_its_sampling_law(
     generated: tuple[SentenceExecution, Path, ArtifactIdentity, ArtifactIdentity],
 ) -> None:
@@ -475,6 +481,7 @@ def test_different_continuations_draw_different_latents_and_laws(
     assert not torch.equal(latents[0], latents[1])
 
 
+@pytest.mark.slow
 def test_same_seed_reproduces_byte_identically_whatever_the_ambient_rng(
     generated: tuple[SentenceExecution, Path, ArtifactIdentity, ArtifactIdentity],
 ) -> None:
@@ -495,6 +502,7 @@ def test_same_seed_reproduces_byte_identically_whatever_the_ambient_rng(
     assert torch.equal(first["rng"]["cpu"], second["rng"]["cpu"])
 
 
+@pytest.mark.slow
 def test_generation_leaves_the_callers_rng_untouched(tmp_path: Path) -> None:
     template, output, training = trained(tmp_path)
     torch.manual_seed(404)
@@ -639,6 +647,7 @@ def test_a_v2_parent_receipt_requires_its_original_reader(
     _refused(generated, child, "child-of-v2.json", match="requires its original reader")
 
 
+@pytest.mark.slow
 def test_a_trace_without_the_sealed_final_step_is_refused_by_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -659,6 +668,7 @@ def _continuation_lengths(report: dict[str, object]) -> list[int]:
     return [len(e["log_scores"]) for e in report["continuations"]]  # type: ignore[attr-defined]
 
 
+@pytest.mark.slow
 def test_pause_inside_the_second_continuation_resumes_to_the_whole_run(
     generated: tuple[SentenceExecution, Path, ArtifactIdentity, ArtifactIdentity],
 ) -> None:
@@ -685,6 +695,7 @@ def test_pause_inside_the_second_continuation_resumes_to_the_whole_run(
     assert done["continuations"][0]["snapshot"] == mid["continuations"][0]["snapshot"]
 
 
+@pytest.mark.slow
 def test_a_paused_v3_parent_resumes_again_and_still_matches_the_whole_run(
     generated: tuple[SentenceExecution, Path, ArtifactIdentity, ArtifactIdentity],
 ) -> None:
@@ -720,6 +731,7 @@ def test_a_paused_v3_parent_resumes_again_and_still_matches_the_whole_run(
     assert _law_only(done) == _law_only(whole) and done["summary"] == whole["summary"]
 
 
+@pytest.mark.slow
 def test_pause_at_the_last_observation_of_the_first_continuation_is_still_paused(
     generated: tuple[SentenceExecution, Path, ArtifactIdentity, ArtifactIdentity],
 ) -> None:
@@ -750,6 +762,7 @@ def test_pause_at_the_last_observation_of_the_first_continuation_is_still_paused
     assert _law_only(done) == _law_only(whole) and done["summary"] == whole["summary"]
 
 
+@pytest.mark.slow
 def test_scripted_pause_at_the_continuation_boundary_resumes_into_a_fresh_seed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

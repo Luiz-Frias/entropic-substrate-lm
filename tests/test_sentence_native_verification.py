@@ -13,6 +13,7 @@ pytestmark = pytest.mark.unit
 REQUEST = ContentHash("sha256", "1" * 64)
 
 
+@pytest.mark.slow
 def test_native_receipt_is_bound_and_can_be_checked_without_native_rerun(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -96,6 +97,7 @@ def test_native_receipt_is_bound_and_can_be_checked_without_native_rerun(
         )
 
 
+@pytest.mark.slow
 def test_native_failure_cannot_emit_a_pass_receipt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -116,6 +118,7 @@ def test_native_failure_cannot_emit_a_pass_receipt(
     assert len(list(output.glob("*-native-failure.json"))) == 2
 
 
+@pytest.mark.slow
 def test_rejected_receipt_never_becomes_a_reusable_success_marker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -22,6 +22,7 @@ from entropic_substrate.ladder.run.trace_capture import (
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.slow
 def test_public_span_diagnostic_round_trip(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

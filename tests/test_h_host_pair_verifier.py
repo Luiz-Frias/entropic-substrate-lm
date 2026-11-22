@@ -70,6 +70,7 @@ def on_host(
     )
 
 
+@pytest.mark.slow
 def test_the_host_verifier_yields_the_same_verified_handoff_on_identical_checkpoint_bytes(
     world: World,
 ) -> None:

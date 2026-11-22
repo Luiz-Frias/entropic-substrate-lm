@@ -211,6 +211,7 @@ addopts = ["--strict-markers", "--import-mode=importlib"]
 markers = [
   "unit: fast hermetic unit tests (CPU, <60s)",
   "integration: multi-component integration tests",
+  "slow: heavy tier, deselected by `just test-fast`; every full gate still runs it",
 ]
 
 # ---------------------------------------------------------------------------

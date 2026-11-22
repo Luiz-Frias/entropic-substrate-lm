@@ -318,6 +318,7 @@ def test_a_failure_at_final_snapshot_is_collected_as_evidence_with_its_result_v2
     )
 
 
+@pytest.mark.slow
 def test_a_final_snapshot_failure_with_a_complete_verdict_is_a_resumable_source_an_exclusion_is_not(
     tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -670,6 +671,7 @@ def test_a_paused_or_stopped_terminal_whose_cited_result_names_the_other_status_
         collect(tmp_path, objects, request, "lie")
 
 
+@pytest.mark.slow
 def test_a_fresh_donor_run_root_must_not_pre_exist_in_the_workspace(
     tmp_path: Path, pair: Pair, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -733,6 +735,7 @@ def test_a_fresh_donor_run_root_must_not_pre_exist_in_the_workspace(
     assert report is not None and report["terminal_name"] == "failure"
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("missing_cell", ["donor", "recipient"])
 def test_a_collection_of_one_cell_missing_is_refused_not_collected(
     tmp_path: Path, pair: Pair, missing_cell: str
@@ -827,6 +830,7 @@ PAIR_CELL_KEYS = {
 }
 
 
+@pytest.mark.slow
 def test_a_pair_collection_v2_has_exactly_its_key_set_and_each_cell_entry_its_own(
     tmp_path: Path, pair: Pair
 ) -> None:

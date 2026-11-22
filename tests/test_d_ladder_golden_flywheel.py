@@ -28,6 +28,7 @@ from .d_ladder_golden_fixtures import (
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.slow
 def test_actual_d2_through_d5_share_one_producer_capture_analysis_filing_lineage(
     tmp_path, monkeypatch
 ):

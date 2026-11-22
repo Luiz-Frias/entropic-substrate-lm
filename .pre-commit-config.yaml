@@ -157,11 +157,13 @@ repos:
   - repo: https://github.com/andrewaylett/pre-commit-hooks
     rev: v0.7.2
     hooks:
-      # Fast feedback: unit tests on every commit (CPU, hermetic)
+      # Fast feedback: the fast unit tier on every commit (CPU, hermetic). `slow`
+      # runs at pre-push, `just check`, CI and `just ship-it`; tests/test_suite_tiers.py
+      # pins that none of those deselects it.
       - id: uv-run
         name: python unit tests (uv)
         stages: [pre-commit]
-        args: ["pytest", "-m", "unit", "-q", "--maxfail=1", "--disable-warnings", "-n", "auto", "--dist", "loadfile"]
+        args: ["pytest", "-m", "unit and not slow", "-q", "--maxfail=1", "--disable-warnings", "-n", "auto", "--dist", "loadfile"]
 
       # Pre-push: full suite (unit + integration) before code reaches remote
       - id: uv-run

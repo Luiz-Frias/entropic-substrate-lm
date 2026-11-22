@@ -1741,6 +1741,7 @@ def test_the_recorded_exclusion_members_are_register_members_with_pinned_values(
         verdict_record("complete", H1ExclusionReason.MISSING_ENDPOINT, "donor")
 
 
+@pytest.mark.slow
 def test_pair_level_events_carry_the_pair_id_and_cell_events_their_cells_identity(
     tmp_path: Path, pair: Pair
 ) -> None:
@@ -1857,6 +1858,7 @@ def test_the_new_terminal_and_the_closed_status_sets_are_pinned() -> None:
 
 
 # ============================================ the result v2 integrity layers, pinned by forgery
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("status", "verdict"),
     [
@@ -1981,6 +1983,7 @@ def _relabel_the_status(row: dict[str, Any]) -> None:
     row["status"] = "paused"
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("forge", "message"),
     [
@@ -2168,6 +2171,7 @@ def test_the_request_refuses_a_pair_that_is_not_codec_sharing_before_any_spend(
         pair_request(pair, cells=cells)
 
 
+@pytest.mark.slow
 def test_a_retired_v1_parent_receipt_is_refused_by_name_at_the_parent_hop(
     tmp_path: Path, pair: Pair
 ) -> None:

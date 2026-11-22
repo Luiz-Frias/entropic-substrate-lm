@@ -14,6 +14,7 @@ from entropic_substrate.ladder.run.journal import artifact_reference, write_json
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.slow
 def test_public_capture_and_relocated_inspection(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

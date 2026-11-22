@@ -530,6 +530,7 @@ def test_a_sink_failure_on_the_ok_end_propagates_without_a_failure_marker(
     assert not (root / "worker" / "failure.json").exists()
 
 
+@pytest.mark.slow
 def test_the_sink_never_changes_the_r2_objects_the_worker_publishes(tmp_path: Path) -> None:
     """Characterization pin (GREEN before the change): with or without a sink the
     worker publishes the same keys in the same order."""
