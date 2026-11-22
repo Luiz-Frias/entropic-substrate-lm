@@ -40,6 +40,13 @@ INFRA_PATTERNS: tuple[str, ...] = (
     "src/entropic_substrate/ladder/capture/adapters/mlflow*.py",
     "src/entropic_substrate/ladder/capture/reader/sinks.py",
     "tests/live/*",
+    # The logger smoke's subject: the logging substrate, each series' emission
+    # path and the smoke itself. `just logger-smoke-image` (ship-it-full only)
+    # is the one place they run inside the pinned image.
+    "src/entropic_substrate/kernel/runtime/logging.py",
+    "src/entropic_substrate/*_log_events.py",
+    "src/entropic_substrate/*_host_log.py",
+    "scripts/logger_smoke.py",
 )
 # The gate's own entry point. The justfile as a whole is not a live-stack
 # file (most recipes are unrelated), so only a change to THIS recipe counts;

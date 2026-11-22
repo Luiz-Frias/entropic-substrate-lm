@@ -35,6 +35,11 @@ pytestmark = pytest.mark.unit
         "src/entropic_substrate/ladder/capture/adapters/mlflow_strict.py",
         "src/entropic_substrate/ladder/capture/reader/sinks.py",
         "tests/live/test_mlflow_live.py",
+        "src/entropic_substrate/kernel/runtime/logging.py",
+        "src/entropic_substrate/ladder/run/worker_log_events.py",
+        "src/entropic_substrate/ladder/run/worker/h_probe_log_events.py",
+        "src/entropic_substrate/ladder/run/worker/h_probe_host_log.py",
+        "scripts/logger_smoke.py",
     ],
 )
 def test_live_stack_paths_require_the_full_gate(path: str) -> None:

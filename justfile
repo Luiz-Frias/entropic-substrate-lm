@@ -297,6 +297,17 @@ container-publish tag="ghcr.io/luiz-frias/entropic-substrate-lm:latest" builder=
 container-test:
     bash scripts/run_container_test.sh
 
+# Logger smoke inside the digest-pinned image from docs/deploy-h100.md, with
+# the CURRENT source mounted over the image's: the image supplies only its own
+# interpreter and installed packages. One container, never beside another
+# (house rule 2); `ship-it-full` runs it after `container-test` has torn down.
+# A missing image is pulled; a failed pull or a down podman FAILS, never skips.
+# MEASURED 2026-11-22 on Apple silicon (amd64 under qemu, podman VM 4 vCPU /
+# 4 GB): this recipe 7.1 s with the image cached, both active paths PASS; the
+# one-time pull was 250 s for 4.08 GB compressed.
+logger-smoke-image:
+    podman run --rm --platform linux/amd64 -v "{{ justfile_directory() }}/src:/app/src:ro" -v "{{ justfile_directory() }}/scripts:/app/scripts:ro" "$(uv run python scripts/logger_smoke.py image-ref)" python scripts/logger_smoke.py run --status active
+
 # ---------------------------------------------------------------------------
 # Publish
 # ---------------------------------------------------------------------------
@@ -306,8 +317,8 @@ container-test:
 #   ship-it        static checks, then `gt submit` (whose pre-push hook runs
 #                  tests/unit + tests/e2e in full and reads the post-commit
 #                  record), then `post-ship`. NO containers.
-#   ship-it-full   `just check` + the live `container-test` gate, then submit,
-#                  then `post-ship`.
+#   ship-it-full   `just check` + the live `container-test` gate + the logger
+#                  smoke inside the pinned image, then submit, then `post-ship`.
 #
 # Nothing but `container-test` executes the live MLflow path: the tests under
 # tests/live skipif on MLFLOW_TRACKING_URI, so with no stack up they SILENTLY
@@ -321,8 +332,8 @@ container-test:
 # it from being a bypass is mechanical, not a habit: scripts/ship_scope.py
 # reads the stack's diff and REFUSES (exit 3, naming the files and
 # `just ship-it-full`) when it touches compose, the image definition, the
-# dependency files, the MLflow adapter or sinks, the container gate, or
-# tests/live. Pinned by tests/repo/test_ship_scope.py and
+# dependency files, the MLflow adapter or sinks, the container gate,
+# tests/live, or the logging substrate and the series emission paths. Pinned by tests/repo/test_ship_scope.py and
 # tests/repo/test_suite_tiers.py. Not covered by any local recipe: a
 # dependency PR opened by a bot never passes through either one.
 
@@ -346,7 +357,7 @@ ship-it:
 # The full gate: CI-parity check and the live MLflow stack, then submit. Run it
 # whenever `just ship-it` refuses, and on demand for infra work.
 ship-it-full:
-    uv run python tests/suite_lock.py ship-it-full -- bash -c 'just check && just container-test && gt submit --stack --no-edit --no-interactive --always && just post-ship'
+    uv run python tests/suite_lock.py ship-it-full -- bash -c 'just check && just container-test && just logger-smoke-image && gt submit --stack --no-edit --no-interactive --always && just post-ship'
 
 # After the submit: the folders the push did not run, slow tests included, then
 # the dead-code WARNING report (never fails; candidates for a later refactor).

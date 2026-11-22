@@ -307,7 +307,16 @@ def test_cli_without_label_separator_and_command_is_a_usage_error(argv: list[str
     ("recipe", "steps_in_order"),
     [
         ("ship-it", ("scripts/ship_scope.py", "just fmt-check", "gt submit", "just post-ship")),
-        ("ship-it-full", ("just check", "just container-test", "gt submit", "just post-ship")),
+        (
+            "ship-it-full",
+            (
+                "just check",
+                "just container-test",
+                "just logger-smoke-image",
+                "gt submit",
+                "just post-ship",
+            ),
+        ),
     ],
 )
 def test_each_ship_recipe_holds_the_lock_across_all_of_its_steps(
