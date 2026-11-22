@@ -114,11 +114,10 @@ def changed_files(repo: Path, base: str) -> list[str]:
     merge_base = git("merge-base", "HEAD", base)
     # --no-renames: with rename detection a moved file is reported under its
     # NEW path only, so renaming compose.yaml away would hide that it left.
-    files = [
-        line
-        for line in git("diff", "--name-only", "--no-renames", f"{merge_base}..HEAD").splitlines()
-        if line
-    ]
+    # -z: NUL-separated and unquoted. Without it git C-quotes a non-ASCII
+    # path, and the quoted form matches no pattern.
+    listing = git("diff", "--name-only", "--no-renames", "-z", f"{merge_base}..HEAD")
+    files = [name for name in listing.split("\0") if name]
     if "justfile" in files and recipe_at(merge_base) != recipe_at("HEAD"):
         files.append(GATE_RECIPE_LABEL)
     return files

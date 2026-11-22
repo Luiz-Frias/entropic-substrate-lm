@@ -163,3 +163,15 @@ def test_the_guarded_recipe_exists_in_this_repository() -> None:
 
     text = (repo_paths.REPO_ROOT / "justfile").read_text(encoding="utf-8")
     assert "run_container_test.sh" in ship_scope.recipe_text(text, ship_scope.GATE_RECIPE)
+
+
+def test_a_non_ascii_live_path_is_matched_not_quoted_away(tmp_path: Path) -> None:
+    # git quotes such a path ("tests/live/test_\303\251.py") unless asked for
+    # NUL-separated output, and the quoted form matches no pattern.
+    repo = _repo(tmp_path)
+    (repo / "tests" / "live").mkdir(parents=True)
+    (repo / "tests" / "live" / "test_é.py").write_text("x = 1\n", encoding="utf-8")
+    _commit(repo)
+    changed = ship_scope.changed_files(repo, "main")
+    assert "tests/live/test_é.py" in changed
+    assert ship_scope.decide(changed)[0] == ship_scope.EXIT_NEEDS_FULL

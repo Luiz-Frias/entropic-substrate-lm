@@ -403,3 +403,10 @@ def test_a_commit_older_than_the_stage_table_is_named_not_judged_by_it(tmp_path:
     _g(repo, "commit", "-q", "-m", "table arrives")
     after = _g(repo, "rev-parse", "HEAD")
     assert stages.split_by_gate(repo, [before, after]) == ([after], [before])
+
+
+def test_a_non_ascii_staged_path_is_read_unquoted(tmp_path: Path) -> None:
+    repo = _tmp_repo(tmp_path)
+    (repo / "é.txt").write_text("x\n", encoding="utf-8")
+    _g(repo, "add", "-A")
+    assert stages._staged(repo) == ["é.txt"]

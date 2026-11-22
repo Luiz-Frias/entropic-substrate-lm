@@ -241,9 +241,9 @@ def _staged(repo: Path) -> list[str]:
     # keep_index: `git commit -a` and `git commit --only` hand the hook a
     # TEMPORARY index through GIT_INDEX_FILE; the ordinary index would show
     # nothing staged and the stage would skip every unit test.
-    return _git(
-        repo, "diff", "--cached", "--name-only", "--no-renames", keep_index=True
-    ).splitlines()
+    # -z: unquoted names, so a non-ASCII path still maps to its folder.
+    listing = _git(repo, "diff", "--cached", "--name-only", "--no-renames", "-z", keep_index=True)
+    return [name for name in listing.split("\0") if name]
 
 
 ZERO_OID = "0" * TREE_HEX
@@ -258,6 +258,11 @@ def pushed_commits(repo: Path, *, stdin_lines: Sequence[str], to_ref: str | None
     ref on (``PRE_COMMIT_TO_REF``); a stacked push carries the whole line, so
     in that case every local branch on the same line of history that still
     holds commits no remote has is added. With neither, the commit is HEAD.
+
+    MEASURED 2026-11-21, prek 0.4.12, `git push origin one two` with two
+    unrelated branches: the hook got an EMPTY stdin and PRE_COMMIT_TO_REF for
+    the first branch only. So a second, unrelated branch in one push is NOT
+    seen here; a stacked push (one line of history) is. CI is the backstop.
     """
     listed = [
         fields[1]
