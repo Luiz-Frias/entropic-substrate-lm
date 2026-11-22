@@ -21,8 +21,9 @@ identical checkpoint bytes before anything relies on it.
 
 Layering. ``seals`` admits the hand-off seal as a chain root and owns the record's key set;
 this module imports ``seals``, never the reverse. It does not import ``ladder.register`` or
-``ladder.analyze`` (tests/test_h_codec_handoff.py pins that by AST): the block-exclusion
-vocabulary is the caller's, and ``CodecHandoffDefect.code == "independent_warmup"`` equals
+``ladder.analyze`` (tests/unit/ladder/run/test_h_codec_handoff.py pins that by AST): the
+block-exclusion vocabulary is the caller's, and
+``CodecHandoffDefect.code == "independent_warmup"`` equals
 ``H1ExclusionReason.INDEPENDENT_WARMUP.value`` by a test, not by an import. Importing
 ``h_preservation`` here would put the registration layer into this reader's member identity.
 
