@@ -22,6 +22,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+import yaml
 
 import repo_paths
 
@@ -35,7 +36,9 @@ pytestmark = pytest.mark.unit
 
 def _recipe_body(name: str) -> str:
     text = (REPO_ROOT / "justfile").read_text()
-    match = re.search(rf"^{re.escape(name)}\b[^\n]*:[^\n]*\n((?:[ \t]+[^\n]*\n|\n)+)", text, re.M)
+    match = re.search(
+        rf"^{re.escape(name)}(?![\w-])[^\n]*:[^\n]*\n((?:[ \t]+[^\n]*\n|\n)+)", text, re.M
+    )
     assert match is not None, f"justfile has no recipe {name!r}"
     return match.group(1)
 
@@ -84,20 +87,71 @@ def test_check_gate_runs_the_full_unit_recipe() -> None:
     assert "test-fast" not in prerequisites
 
 
-def test_pre_push_hook_never_deselects_slow() -> None:
-    text = (REPO_ROOT / ".pre-commit-config.yaml").read_text()
-    pytest_arg_lines = [line for line in text.splitlines() if '"pytest"' in line]
-    assert pytest_arg_lines, "no pytest hook found; the pin would be vacuous"
-    unmarked = [line for line in pytest_arg_lines if '"-m"' not in line]
-    assert unmarked, "no full-suite pytest hook left"
-    assert all(SLOW not in line for line in unmarked)
+def _suite_hooks() -> dict[str, list[str]]:
+    """stage -> args of the one hook that calls scripts/suite_stages.py there."""
+    config = yaml.safe_load((REPO_ROOT / ".pre-commit-config.yaml").read_text())
+    found: dict[str, list[str]] = {}
+    for repo in config["repos"]:
+        for hook in repo["hooks"]:
+            args = [str(arg) for arg in hook.get("args", [])]
+            if "scripts/suite_stages.py" not in args:
+                continue
+            for stage in hook["stages"]:
+                assert stage not in found, f"two suite hooks at {stage}"
+                found[stage] = args[args.index("scripts/suite_stages.py") + 1 :]
+    return found
 
 
-def test_pre_commit_stage_runs_the_fast_tier_and_nothing_narrower() -> None:
+def test_each_hook_stage_calls_its_own_suite_stage() -> None:
+    assert _suite_hooks() == {
+        "pre-commit": ["pre-commit"],
+        "post-commit": ["post-commit"],
+        "pre-push": ["pre-push"],
+    }
+
+
+def test_no_hook_calls_pytest_directly_any_more() -> None:
     text = (REPO_ROOT / ".pre-commit-config.yaml").read_text()
-    marked = [line for line in text.splitlines() if '"pytest"' in line and '"-m"' in line]
-    assert len(marked) == 1, "exactly one marker-selected pytest hook: the commit stage"
-    assert '"-m", "unit and not slow"' in marked[0]
+    assert [line for line in text.splitlines() if '"pytest"' in line] == [], (
+        "a hook that calls pytest itself bypasses the stage table in scripts/suite_stages.py"
+    )
+
+
+def test_the_post_commit_hook_type_is_installed_by_default() -> None:
+    config = yaml.safe_load((REPO_ROOT / ".pre-commit-config.yaml").read_text())
+    assert {"pre-commit", "post-commit", "pre-push"} <= set(config["default_install_hook_types"])
+
+
+SUBMIT = "gt submit --stack --no-edit --no-interactive --always"
+
+
+def test_slim_ship_it_guards_scope_then_submits_then_runs_the_post_step() -> None:
+    body = _recipe_body("ship-it")
+    assert "container-test" not in body
+    assert "tests/suite_lock.py ship-it --" in body
+    order = [body.index("scripts/ship_scope.py"), body.index(SUBMIT), body.index("just post-ship")]
+    assert order == sorted(order), "scope guard, then submit, then the post step"
+
+
+def test_full_ship_it_runs_check_and_the_live_gate_before_submitting() -> None:
+    body = _recipe_body("ship-it-full")
+    assert "tests/suite_lock.py ship-it-full --" in body
+    order = [
+        body.index("just check"),
+        body.index("just container-test"),
+        body.index(SUBMIT),
+        body.index("just post-ship"),
+    ]
+    assert order == sorted(order)
+    assert "ship_scope" not in body, (
+        "the full recipe is where the guard sends you; it must not refuse"
+    )
+
+
+def test_the_post_step_runs_the_post_ship_stage_and_the_dead_code_report() -> None:
+    body = _recipe_body("post-ship")
+    assert "scripts/suite_stages.py run post-ship" in body
+    assert "scripts/dead_code_report.py" in body
 
 
 def test_cold_import_module_is_slow() -> None:
@@ -116,3 +170,15 @@ def test_every_slow_file_keeps_a_tier_marker_so_the_full_gate_selects_it() -> No
         if not (_module_marks(ast.parse(p.read_text())) & TIER_MARKS)
     ]
     assert orphans == []
+
+
+def test_every_unit_module_carries_the_unit_marker() -> None:
+    # `just test` and `just check` select with `-m unit`; a module under
+    # tests/unit without the marker is collected by the hook stages and
+    # silently skipped by the gate. Found 2026-11-21: two modules, 11 tests.
+    unmarked = sorted(
+        path.relative_to(repo_paths.REPO_ROOT).as_posix()
+        for path in (repo_paths.TESTS_ROOT / "unit").rglob("test_*.py")
+        if "mark.unit" not in path.read_text(encoding="utf-8")
+    )
+    assert unmarked == []

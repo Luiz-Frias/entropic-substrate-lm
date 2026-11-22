@@ -24,6 +24,8 @@ from entropic_substrate.ladder.capture.ledger.d1_lifecycle_values import (
     D1ProcessEventKind,
 )
 
+pytestmark = pytest.mark.unit
+
 
 def _event(sequence: int, *, artifact_index: int | None = None) -> D1LifecycleEvent:
     index = sequence if artifact_index is None else artifact_index
