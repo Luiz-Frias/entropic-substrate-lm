@@ -486,8 +486,26 @@ def test_an_antipodal_mixture_draw_survives_the_artifact_write_and_the_reader(
 ) -> None:
     """A7: an exact antipode is a genuine zero density (-inf). It must reach the record as the
     string "-inf" in the columns that admit it and be re-derived by the reader, not kill the
-    run at the write (journal.write_json uses allow_nan=False)."""
+    run at the write (journal.write_json uses allow_nan=False).
+
+    The antipode must be EXACT by construction. ``law.log_prob`` renormalizes the observation,
+    and -direction survives that bit for bit for only about 44% of FP32 directions (MEASURED
+    2026-11-05, 200,000 random dim-8 directions); a fixed point of renormalization is not
+    always reachable either (about 4% oscillate, MEASURED 2026-11-23). So the q posterior's
+    direction is snapped to the signed one-hot of its largest component, whose every entry is
+    exactly 0 or +-1 on any platform, and the antipodal draw is its negation. Without the snap
+    this test passed or failed by the seed: green locally, red on CI's Linux torch build at
+    fa958957 (eval columns finite, e.g. -2264.85, where -inf was required)."""
     original = SentenceExecution.evaluate
+    original_from_vector = DirectionalMagnitudeLaw.from_vector
+
+    def axis_aligned(spec: LawSpec, vector: torch.Tensor) -> DirectionalMagnitudeLaw:
+        law = original_from_vector(spec, vector)
+        index = law.direction.abs().argmax(dim=-1, keepdim=True)
+        snapped = torch.zeros_like(law.direction).scatter(
+            -1, index, law.direction.gather(-1, index).sign()
+        )
+        return DirectionalMagnitudeLaw(spec, snapped, law.log_radius_mean)
 
     def antipodal(self: SentenceExecution, latent_usage: Any) -> dict[str, object]:
         original_rsample = DirectionalMagnitudeLaw.rsample
@@ -505,6 +523,7 @@ def test_an_antipodal_mixture_draw_survives_the_artifact_write_and_the_reader(
 
         with monkeypatch.context() as patch:
             patch.setattr(DirectionalMagnitudeLaw, "rsample", rsample)
+            patch.setattr(DirectionalMagnitudeLaw, "from_vector", staticmethod(axis_aligned))
             return original(self, latent_usage)
 
     monkeypatch.setattr(SentenceExecution, "evaluate", antipodal)
