@@ -538,6 +538,15 @@ def _check_instrument_fields(
                 f"{path}: {where} diagnostics log_weight_sd {name}",
                 f" at k={k}",
             )
+            # each entry is a finite, non-negative sd, or None for a zero-density row (PR #435
+            # review round 7): the in-process reader recomputes it from the weights, admission
+            # can only bound it
+            for sd in by_k[k]:  # pyright: ignore[reportUnknownVariableType]
+                if sd is not None and (not _finite_number(sd) or sd < 0):  # pyright: ignore[reportUnknownArgumentType, reportOperatorIssue]
+                    _gap(
+                        f"{path}: {where} diagnostics log_weight_sd {name} at k={k} has {sd!r}, "
+                        "not a finite non-negative number"
+                    )
     for name in _USAGE_KEYS:
         _require_row_count(usage[name], size, f"{path}: {where} latent_usage {name}")  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
 

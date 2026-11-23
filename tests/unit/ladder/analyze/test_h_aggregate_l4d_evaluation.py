@@ -130,6 +130,38 @@ def test_a_cosine_outside_minus_one_to_one_is_refused(tmp_path: Path, value: flo
         _load(tmp_path, bad)
 
 
+# An infinity never reaches this check: the capture reader refuses a non-finite JSON constant
+# ("Infinity") at parse time, before admission, so only finite bad values are pinned here.
+@pytest.mark.parametrize("value", ["bad", -99.0])
+def test_a_log_weight_sd_entry_that_is_not_a_finite_nonnegative_number_is_refused(
+    tmp_path: Path, value: object
+) -> None:
+    """PR #435 review round 7 (CodeRabbit and Codex): admission checked only each spread
+    array's length, so a non-number, a negative sd or an infinity loaded and either broke the
+    projection later or reported an impossible spread (-99). MEASURED 2026-11-23: without the
+    element check both cases load."""
+
+    def bad(row: dict[str, Any]) -> None:
+        spread = row["examples"][0]["diagnostics"]["log_weight_sd"]["prior"]
+        values = spread[min(spread, key=int)]
+        values[0] = value
+
+    with pytest.raises(TelemetryGap, match=r"log_weight_sd prior .* not a finite non-negative"):
+        _load(tmp_path, bad)
+
+
+def test_a_log_weight_sd_of_zero_or_none_still_loads(tmp_path: Path) -> None:
+    """The control: a zero spread is attainable and a None entry marks a zero-density row."""
+
+    def edge(row: dict[str, Any]) -> None:
+        for example in row["examples"]:
+            for by_k in example["diagnostics"]["log_weight_sd"].values():
+                for values in by_k.values():
+                    values[:] = [0.0 if i % 2 == 0 else None for i in range(len(values))]
+
+    assert _load(tmp_path, edge).evaluations
+
+
 def test_a_cosine_of_exactly_plus_or_minus_one_still_loads(tmp_path: Path) -> None:
     """The control: parallel and antipodal directions are attainable cosines."""
 

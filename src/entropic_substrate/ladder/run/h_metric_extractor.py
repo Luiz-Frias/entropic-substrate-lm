@@ -419,7 +419,8 @@ def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
                             if item is None:
                                 continue
                             number = _finite(item)
-                            if number is None:
+                            # a standard deviation is never negative (PR #435 review round 7)
+                            if number is None or number < 0:
                                 return None
                             bucket_k.append(number)
                 sd_seen += 1

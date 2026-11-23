@@ -337,6 +337,16 @@ def test_a_cosine_outside_minus_one_to_one_voids_the_projection() -> None:
     assert project_evaluation(fx.event([_full_example(cosine=[1.0, -1.0])])) is not None
 
 
+def test_a_negative_log_weight_sd_voids_the_projection() -> None:
+    """PR #435 review round 7 (Codex): a standard deviation cannot be negative, so [-99, -99]
+    must not project as eval/log_weight_sd_prior_k2 = -99."""
+    full = _full_example()
+    full["diagnostics"]["log_weight_sd"]["prior"]["2"] = [-99.0, -99.0]
+    assert project_evaluation(fx.event([full])) is None
+    full["diagnostics"]["log_weight_sd"]["prior"]["2"] = [0.0, None]
+    assert project_evaluation(fx.event([full])) is not None
+
+
 def test_examples_with_different_sample_count_sets_void_the_projection() -> None:
     """PR #435 review round 5 (CodeRabbit): the per-example checks compared each proposal with
     q's sample counts in the SAME example only, so a second example that consistently lacked
