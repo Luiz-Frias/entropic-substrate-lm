@@ -10,7 +10,7 @@ import copy
 import inspect
 import json
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
@@ -19,9 +19,11 @@ import pytest
 import torch
 
 from entropic_substrate.core.sentence import scoring
+from entropic_substrate.core.sentence.boundary import SentenceByteCodec
 from entropic_substrate.core.sentence.codec import teacher_forcing_prefix
 from entropic_substrate.core.sentence.law import DirectionalMagnitudeLaw, LawSpec
 from entropic_substrate.core.sentence.scoring import (
+    DecoderScorer,
     LatentUsageOperand,
     derived_stream_keys,
     importance_evaluate,
@@ -238,7 +240,9 @@ class _SpyingPosteriorMean:
         self.null: list[list[float]] = []
         self.q_log_radius: list[list[float] | None] = []
 
-    def q_decoder_log_prob(self, score, posterior):  # type: ignore[no-untyped-def]
+    def q_decoder_log_prob(
+        self, score: DecoderScorer, posterior: DirectionalMagnitudeLaw
+    ) -> torch.Tensor:
         q = score(scoring.posterior_mean_vector(posterior))
         self.q.append(q.tolist())
         self.null.append(score(posterior.direction * scoring.NULL_LATENT_RADIUS).tolist())
@@ -260,8 +264,11 @@ def _train_decoder_on_the_first_batch(run: SentenceExecution) -> Any:
         for _ in range(150):
             latent = scoring.posterior_mean_vector(codec.posterior(batch.target)).detach()
             logits = codec.decoder(latent, prefix)
+            # pad targets carry no decoder class: mask them as the production objective does
             loss = torch.nn.functional.cross_entropy(
-                logits.reshape(-1, logits.shape[-1]), batch.target.reshape(-1)
+                logits.reshape(-1, logits.shape[-1]),
+                batch.target.reshape(-1),
+                ignore_index=SentenceByteCodec.pad,
             )
             optimizer.zero_grad()
             loss.backward()
@@ -341,7 +348,9 @@ def test_the_record_names_the_operand_the_injected_implementation_declares(
     class Declared:
         operand = LatentUsageOperand.draw_average
 
-        def q_decoder_log_prob(self, score, posterior):  # type: ignore[no-untyped-def]
+        def q_decoder_log_prob(
+            self, score: DecoderScorer, posterior: DirectionalMagnitudeLaw
+        ) -> torch.Tensor:
             return score(scoring.posterior_mean_vector(posterior))
 
     run = _prediction_run(tmp_path, 1)
@@ -417,7 +426,7 @@ def test_the_oracle_goes_red_when_the_extra_draws_share_the_q_stream(
     run = _prediction_run(tmp_path, 3)
 
     @contextlib.contextmanager
-    def shared(key: int, like: torch.Tensor):  # type: ignore[no-untyped-def]
+    def shared(key: int, like: torch.Tensor) -> Iterator[None]:
         torch.manual_seed(key)  # still seeds, but never restores: the q stream is consumed
         yield
 

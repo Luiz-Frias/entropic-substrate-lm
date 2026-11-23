@@ -223,8 +223,14 @@ def test_a_proposal_block_on_some_examples_and_not_others_is_refused_by_its_own_
     second = _full_example()
     if dropped == "all":
         del second["proposals"]
+        removed: tuple[str, ...] = ("prior", "mixture")
     else:
         del second["proposals"][dropped]
+        removed = (dropped,)
+    # PR #435 review round 5: the deleted proposals' spreads go too, or the spread-name check
+    # refuses the record first and this guard is never the one tested
+    for name in removed:
+        del second["diagnostics"]["log_weight_sd"][name]
     assert project_evaluation(fx.event([_full_example(), second])) is None
 
 
@@ -322,6 +328,21 @@ def test_a_block_without_every_carried_proposal_and_q_sample_count_voids_the_pro
     assert project_evaluation(fx.event([_drop(_full_example(), path)])) is None
     # the control: two complete examples project, so the refusal is the one missing key
     assert project_evaluation(fx.event([_full_example(), _full_example()])) is not None
+
+
+def test_examples_with_different_sample_count_sets_void_the_projection() -> None:
+    """PR #435 review round 5 (CodeRabbit): the per-example checks compared each proposal with
+    q's sample counts in the SAME example only, so a second example that consistently lacked
+    k=4 projected and every k=4 key averaged the first example alone. MEASURED 2026-11-23:
+    without the cross-example check this record projects eval/log_marginal_k4 = -8.0."""
+    second = _full_example()
+    for block in (second, second["proposals"]["prior"], second["proposals"]["mixture"]):
+        del block["by_sample_count"]["4"]
+    for name in ("q", "prior", "mixture"):
+        del second["diagnostics"]["log_weight_sd"][name]["4"]
+    assert project_evaluation(fx.event([_full_example(), second])) is None
+    # the control: the same reduced example on its own is a well-formed record
+    assert project_evaluation(fx.event([second])) is not None
 
 
 @pytest.mark.parametrize("name", ["prior", "mixture"])

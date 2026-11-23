@@ -1,15 +1,21 @@
 """Importance weighting distinguishes predictive probability from reconstruction."""
 
 import math
+from collections.abc import Iterator
 
 import pytest
 import torch
 from tests.unit.core.sentence.test_sentence_model import history, tiny_model
 
 from entropic_substrate.core.sentence.codec import teacher_forcing_prefix
+from entropic_substrate.core.sentence.law import DirectionalMagnitudeLaw
+from entropic_substrate.core.sentence.model import SentencePredictor
 from entropic_substrate.core.sentence.scoring import (
     NULL_LATENT_RADIUS,
+    DecoderScorer,
+    LatentUsageEstimator,
     LatentUsageOperand,
+    ProposalEvaluation,
     UnsupportedLatentOperand,
     derived_stream_keys,
     evaluate_proposals,
@@ -153,13 +159,20 @@ POSTERIOR_MEAN = latent_usage_estimator(LatentUsageOperand.posterior_mean)
 TWO_TARGETS = torch.tensor([[67, 46, 257], [99, 100, 257]])
 
 
-def _frozen(interface: str = "magnitude") -> "torch.nn.Module":
+def _frozen(interface: str = "magnitude") -> SentencePredictor:
     model = tiny_model(interface).eval()
     model.codec.freeze_encoder()
     return model
 
 
-def _proposals(model, target=None, *, counts=(2, 4, 8), chunk=3, estimator=POSTERIOR_MEAN):  # type: ignore[no-untyped-def]
+def _proposals(
+    model: SentencePredictor,
+    target: torch.Tensor | None = None,
+    *,
+    counts: tuple[int, ...] = (2, 4, 8),
+    chunk: int = 3,
+    estimator: LatentUsageEstimator = POSTERIOR_MEAN,
+) -> ProposalEvaluation:
     target = TWO_TARGETS if target is None else target
     return evaluate_proposals(
         model,
@@ -173,7 +186,7 @@ def _proposals(model, target=None, *, counts=(2, 4, 8), chunk=3, estimator=POSTE
     )
 
 
-def _train_decoder_on_posterior_mean(model) -> None:  # type: ignore[no-untyped-def]
+def _train_decoder_on_posterior_mean(model: SentencePredictor) -> None:
     """Teach the decoder to read the q posterior mean, so the latent carries information."""
     prefix = teacher_forcing_prefix(TWO_TARGETS, 16)
     optimizer = torch.optim.AdamW(model.codec.decoder.parameters(), lr=1e-2)
@@ -329,7 +342,9 @@ def test_a_nonfinite_latent_usage_operand_is_refused_with_its_own_message(bad: f
     class _NonFinite:
         operand = POSTERIOR_MEAN.operand
 
-        def q_decoder_log_prob(self, score, posterior):  # type: ignore[no-untyped-def]
+        def q_decoder_log_prob(
+            self, score: DecoderScorer, posterior: DirectionalMagnitudeLaw
+        ) -> torch.Tensor:
             return torch.full((posterior.direction.shape[0],), bad, dtype=torch.float64)
 
     model = _frozen("sphere")
@@ -394,7 +409,9 @@ def test_latent_usage_is_negative_and_preserved_when_q_hurts() -> None:
     class Opposite:
         operand = LatentUsageOperand.posterior_mean
 
-        def q_decoder_log_prob(self, score, posterior):  # type: ignore[no-untyped-def]
+        def q_decoder_log_prob(
+            self, score: DecoderScorer, posterior: DirectionalMagnitudeLaw
+        ) -> torch.Tensor:
             return score(-posterior_mean_vector(posterior))
 
     model = _frozen("sphere")
@@ -492,7 +509,7 @@ def test_the_derived_stream_forks_the_generators_of_the_device_the_draws_live_on
     seen: list[list[int]] = []
 
     @contextlib.contextmanager
-    def spy(devices: list[int]):  # type: ignore[no-untyped-def]
+    def spy(devices: list[int]) -> Iterator[None]:
         seen.append(list(devices))
         yield
 

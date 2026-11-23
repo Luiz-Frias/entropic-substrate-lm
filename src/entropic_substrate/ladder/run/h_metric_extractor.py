@@ -327,6 +327,9 @@ def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
     usage_bytes = 0
     usage_seen = 0
     count = len(cast(list[object], examples))
+    # one sample-count set across every example (PR #435 review round 5): a k carried by some
+    # examples only would average its keys over those examples while naming the whole record
+    population: set[str] | None = None
     for example in cast(list[object], examples):
         if not isinstance(example, dict):
             return None
@@ -339,6 +342,10 @@ def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
         # the population every other block of THIS example must cover (PR #435 review round 3):
         # the same sample counts as q and the same number of target rows at each one
         q_shape = {k: len(rows) for k, rows in q_rows.items()}
+        if population is None:
+            population = set(q_shape)
+        elif set(q_shape) != population:
+            return None
         carried = {"q"}
         proposals = ex.get("proposals")
         if proposals is not None:
