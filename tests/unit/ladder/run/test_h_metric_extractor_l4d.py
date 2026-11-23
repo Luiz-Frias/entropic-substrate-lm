@@ -330,6 +330,13 @@ def test_a_block_without_every_carried_proposal_and_q_sample_count_voids_the_pro
     assert project_evaluation(fx.event([_full_example(), _full_example()])) is not None
 
 
+def test_a_cosine_outside_minus_one_to_one_voids_the_projection() -> None:
+    """The projection refuses what admission refuses (PR #435 review round 6): a finite
+    cosine of two unit directions cannot leave [-1, 1]."""
+    assert project_evaluation(fx.event([_full_example(cosine=[999.0, 999.0])])) is None
+    assert project_evaluation(fx.event([_full_example(cosine=[1.0, -1.0])])) is not None
+
+
 def test_examples_with_different_sample_count_sets_void_the_projection() -> None:
     """PR #435 review round 5 (CodeRabbit): the per-example checks compared each proposal with
     q's sample counts in the SAME example only, so a second example that consistently lacked
@@ -372,6 +379,15 @@ def test_the_extractor_vocabularies_are_the_closed_sets() -> None:
     assert LATENT_OPERANDS == ("posterior_mean", "draw_average")
     assert EVALUATION_SCHEMAS == ("h-predictive-evaluation-v1", "h-predictive-evaluation-v2")
     assert fx.PROPOSALS == PROPOSALS and fx.OPERANDS == LATENT_OPERANDS
+
+
+def test_both_readers_mirror_the_writer_cosine_slack() -> None:
+    from entropic_substrate.core.sentence import scoring
+    from entropic_substrate.ladder.analyze import h_aggregate
+    from entropic_substrate.ladder.run import h_metric_extractor
+
+    assert h_metric_extractor.COSINE_SLACK == scoring.COSINE_SLACK
+    assert h_aggregate._COSINE_SLACK == scoring.COSINE_SLACK  # pyright: ignore[reportPrivateUsage]
 
 
 def test_the_global_step_axis_is_unchanged_for_a_v2_report() -> None:

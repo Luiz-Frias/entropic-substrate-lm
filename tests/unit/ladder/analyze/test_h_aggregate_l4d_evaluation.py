@@ -116,6 +116,31 @@ def test_a_proposal_ess_outside_one_to_k_is_refused(tmp_path: Path, name: str, e
         _load(tmp_path, bad)
 
 
+@pytest.mark.parametrize("value", [999.0, -1.5])
+def test_a_cosine_outside_minus_one_to_one_is_refused(tmp_path: Path, value: float) -> None:
+    """PR #435 review (Codex, round 6): admission checked only the cosine array's length, so
+    [999, 999] loaded and reported eval/prior_q_cosine_mean = 999; the in-process reader
+    refuses it. MEASURED 2026-11-23: without the bound at admission both cases load."""
+
+    def bad(row: dict[str, Any]) -> None:
+        cosines = row["examples"][0]["diagnostics"]["prior_q_cosine"]
+        cosines[:] = [value] * len(cosines)
+
+    with pytest.raises(TelemetryGap, match=r"prior_q_cosine .* outside"):
+        _load(tmp_path, bad)
+
+
+def test_a_cosine_of_exactly_plus_or_minus_one_still_loads(tmp_path: Path) -> None:
+    """The control: parallel and antipodal directions are attainable cosines."""
+
+    def edge(row: dict[str, Any]) -> None:
+        for example in row["examples"]:
+            cosines = example["diagnostics"]["prior_q_cosine"]
+            cosines[:] = [1.0 if i % 2 == 0 else -1.0 for i in range(len(cosines))]
+
+    assert _load(tmp_path, edge).evaluations
+
+
 @pytest.mark.parametrize("name", ["prior", "mixture"])
 def test_a_proposal_ess_on_either_bound_still_loads(tmp_path: Path, name: str) -> None:
     """The control for the refusal above: ESS of exactly 1 and exactly k are attainable."""

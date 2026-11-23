@@ -44,6 +44,9 @@ EVALUATION_SCHEMAS = ("h-predictive-evaluation-v1", "h-predictive-evaluation-v2"
 # each pinned equal to its writer-side Literal/StrEnum by tests/unit/ladder/run/test_h_metric_extractor_l4d.py.
 PROPOSALS = ("q", "prior", "mixture")
 LATENT_OPERANDS = ("posterior_mean", "draw_average")
+# The writer's cosine slack (core.sentence.scoring.COSINE_SLACK, exp(2e-5)), mirrored the same
+# way: a cosine of two unit directions beyond it is a damaged record.
+COSINE_SLACK = math.exp(2e-5)
 
 # The h-training-step-v2 schema's own finite-or-None numeric fields
 # (execution.py:advance) -- see that module's docstring for the schema.
@@ -388,6 +391,9 @@ def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
             if d.get("prior_q_cosine") is not None:
                 values = _finite_list(d.get("prior_q_cosine"))
                 if values is None or len(values) != size:
+                    return None
+                # outside [-1, 1] is a damaged record, never an alignment reading
+                if any(abs(v) > COSINE_SLACK for v in values):
                     return None
                 cosines.extend(values)
                 cosine_seen += 1

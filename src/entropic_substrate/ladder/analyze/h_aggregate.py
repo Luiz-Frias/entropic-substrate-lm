@@ -102,6 +102,9 @@ _DIAGNOSTIC_KEYS = (
 _NULLABLE_DIAGNOSTICS = ("prior_log_radius_mean", "q_log_radius_mean")
 # the diagnostics that are one number per target row; log_weight_sd is per proposal per k per row
 _ROW_DIAGNOSTICS = ("prior_log_radius_mean", "q_log_radius_mean", "prior_q_cosine")
+# The writer's cosine slack (core.sentence.scoring.COSINE_SLACK), mirrored as a literal like the
+# vocabularies above; tests/unit/ladder/run/test_h_metric_extractor_l4d.py pins it equal.
+_COSINE_SLACK = math.exp(2e-5)
 _SPREAD_PROPOSALS = ("q", *_PROPOSAL_BLOCKS)
 _USAGE_KEYS = ("q_decoder_log_prob", "null_decoder_log_prob")
 _COMMITTED = "committed"
@@ -510,6 +513,11 @@ def _check_instrument_fields(
         value: object = diagnostics[name]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
         if value is not None:  # the two radius entries are null in a sphere-law cell
             _require_row_count(value, size, f"{path}: {where} diagnostics {name}")
+    # a cosine of two unit directions lies in [-1, 1]; the in-process reader refuses the same
+    # values with the same slack (evaluation_records), so admission agrees (PR #435 review)
+    for cosine in diagnostics["prior_q_cosine"]:  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
+        if not _finite_number(cosine) or abs(cosine) > _COSINE_SLACK:  # pyright: ignore[reportUnknownArgumentType]
+            _gap(f"{path}: {where} diagnostics prior_q_cosine {cosine!r} is outside [-1, 1]")
     spread: object = diagnostics["log_weight_sd"]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
     if not isinstance(spread, dict) or set(spread) != set(_SPREAD_PROPOSALS):  # pyright: ignore[reportUnknownArgumentType]
         _gap(
