@@ -373,6 +373,9 @@ def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
             if not isinstance(diagnostics, dict):
                 return None
             d = cast(dict[str, object], diagnostics)
+            # both log-radius means present (magnitude law) or both absent (sphere law)
+            if (d.get("prior_log_radius_mean") is None) != (d.get("q_log_radius_mean") is None):
+                return None
             # every diagnostic array is one entry per target row (PR #435 review round 2): a
             # list that lost an entry would otherwise put its mean over a shorter population
             size = _row_count(q_rows)
@@ -433,6 +436,9 @@ def project_evaluation(event: dict[str, object]) -> dict[str, float] | None:
             null_lp = _finite_list(u.get("null_decoder_log_prob"))
             counts = _bytes(ex.get("source_bytes"), len(q_lp) if q_lp is not None else -1)
             if q_lp is None or null_lp is None or len(null_lp) != len(q_lp) or counts is None:
+                return None
+            # a log-probability of a discrete target never exceeds 0 (PR #435 review round 8)
+            if any(v > 0 for v in (*q_lp, *null_lp)):
                 return None
             # signed, never clamped: a negative sum is the measurement
             usage_gain += sum(q - n for q, n in zip(q_lp, null_lp, strict=True))

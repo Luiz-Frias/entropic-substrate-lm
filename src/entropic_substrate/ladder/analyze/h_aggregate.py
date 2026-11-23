@@ -513,6 +513,16 @@ def _check_instrument_fields(
         value: object = diagnostics[name]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
         if value is not None:  # the two radius entries are null in a sphere-law cell
             _require_row_count(value, size, f"{path}: {where} diagnostics {name}")
+    # both log-radius means are absent in a sphere-law cell and present in a magnitude cell, and
+    # every present entry is a finite number (PR #435 review round 8 sweep: the in-process reader
+    # binds each to the law and reads each with _reals)
+    radii = [diagnostics[n] for n in _NULLABLE_DIAGNOSTICS]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
+    if (radii[0] is None) != (radii[1] is None):
+        _gap(f"{path}: {where} log-radius means must be both present or both absent")
+    for name, values in zip(_NULLABLE_DIAGNOSTICS, radii, strict=True):  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+        for value in values or ():  # pyright: ignore[reportUnknownVariableType]
+            if not _finite_number(value):  # pyright: ignore[reportUnknownArgumentType]
+                _gap(f"{path}: {where} diagnostics {name} has {value!r}, not a finite number")
     # a cosine of two unit directions lies in [-1, 1]; the in-process reader refuses the same
     # values with the same slack (evaluation_records), so admission agrees (PR #435 review)
     for cosine in diagnostics["prior_q_cosine"]:  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
@@ -549,6 +559,14 @@ def _check_instrument_fields(
                     )
     for name in _USAGE_KEYS:
         _require_row_count(usage[name], size, f"{path}: {where} latent_usage {name}")  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
+        # a log-probability of a discrete target is finite and never positive (PR #435 review
+        # round 8); the signed latent-usage gain is the difference of two such values
+        for value in usage[name]:  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportIndexIssue, reportOptionalSubscript]
+            if not _finite_number(value) or value > 0:  # pyright: ignore[reportUnknownArgumentType, reportOperatorIssue]
+                _gap(
+                    f"{path}: {where} latent_usage {name} has {value!r}, "
+                    "not a finite non-positive number"
+                )
 
 
 def _check_latent_operand(row: Mapping[str, Any], path: Path, where: str) -> None:

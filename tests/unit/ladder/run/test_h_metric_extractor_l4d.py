@@ -337,6 +337,27 @@ def test_a_cosine_outside_minus_one_to_one_voids_the_projection() -> None:
     assert project_evaluation(fx.event([_full_example(cosine=[1.0, -1.0])])) is not None
 
 
+def test_a_positive_latent_usage_log_probability_voids_the_projection() -> None:
+    """PR #435 review round 8 (Codex): a log-probability of a discrete target cannot exceed 0, so
+    q=[999] beside null=[-2] must not project as +1001 nats per byte."""
+    assert (
+        project_evaluation(fx.event([_full_example(usage=([999.0, -9.0], [-4.0, -8.0]))])) is None
+    )
+    assert project_evaluation(fx.event([_full_example(usage=([-3.0, -9.0], [4.0, -8.0]))])) is None
+    # the control: signed differences of two non-positive values still project, either sign
+    assert (
+        project_evaluation(fx.event([_full_example(usage=([0.0, -9.0], [-4.0, 0.0]))])) is not None
+    )
+
+
+def test_one_log_radius_without_the_other_voids_the_projection() -> None:
+    """The sweep: both log-radius means present (magnitude) or both absent (sphere)."""
+    assert project_evaluation(fx.event([_full_example(prior_log_radius=None)])) is None
+    assert project_evaluation(fx.event([_full_example(q_log_radius=None)])) is None
+    both = _full_example(prior_log_radius=None, q_log_radius=None)
+    assert project_evaluation(fx.event([both])) is not None
+
+
 def test_a_negative_log_weight_sd_voids_the_projection() -> None:
     """PR #435 review round 7 (Codex): a standard deviation cannot be negative, so [-99, -99]
     must not project as eval/log_weight_sd_prior_k2 = -99."""

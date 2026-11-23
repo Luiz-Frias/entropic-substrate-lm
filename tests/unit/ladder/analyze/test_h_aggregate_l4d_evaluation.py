@@ -162,6 +162,55 @@ def test_a_log_weight_sd_of_zero_or_none_still_loads(tmp_path: Path) -> None:
     assert _load(tmp_path, edge).evaluations
 
 
+# PR #435 review round 8 (Codex) plus the sweep it prompted: every remaining v2 field bound the
+# in-process reader (evaluation_records._check_v2_example) enforces and admission did not.
+# MEASURED 2026-11-23: without the sweep every refusal case below loads.
+@pytest.mark.parametrize("field", ["q_decoder_log_prob", "null_decoder_log_prob"])
+@pytest.mark.parametrize("value", [999.0, 0.5, "bad"])
+def test_a_latent_usage_value_that_is_not_a_nonpositive_number_is_refused(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    def bad(row: dict[str, Any]) -> None:
+        row["examples"][0]["latent_usage"][field][0] = value
+
+    with pytest.raises(TelemetryGap, match=rf"latent_usage {field} .* not a finite non-positive"):
+        _load(tmp_path, bad)
+
+
+@pytest.mark.parametrize("field", ["prior_log_radius_mean", "q_log_radius_mean"])
+def test_a_log_radius_entry_that_is_not_a_finite_number_is_refused(
+    tmp_path: Path, field: str
+) -> None:
+    def bad(row: dict[str, Any]) -> None:
+        row["examples"][0]["diagnostics"][field][0] = "bad"
+
+    with pytest.raises(TelemetryGap, match=rf"diagnostics {field} .* not a finite number"):
+        _load(tmp_path, bad)
+
+
+@pytest.mark.parametrize("field", ["prior_log_radius_mean", "q_log_radius_mean"])
+def test_one_log_radius_present_without_the_other_is_refused(tmp_path: Path, field: str) -> None:
+    """Both log-radius means are absent in a sphere-law cell and both present in a magnitude
+    cell; the in-process reader binds each to the law, so one without the other is damage."""
+
+    def bad(row: dict[str, Any]) -> None:
+        row["examples"][0]["diagnostics"][field] = None
+
+    with pytest.raises(TelemetryGap, match=r"log-radius means .* both present or both absent"):
+        _load(tmp_path, bad)
+
+
+def test_latent_usage_of_exactly_zero_still_loads(tmp_path: Path) -> None:
+    """The control: a log-probability of 0 (probability one) is attainable."""
+
+    def edge(row: dict[str, Any]) -> None:
+        for example in row["examples"]:
+            for values in example["latent_usage"].values():
+                values[:] = [0.0] * len(values)
+
+    assert _load(tmp_path, edge).evaluations
+
+
 def test_a_cosine_of_exactly_plus_or_minus_one_still_loads(tmp_path: Path) -> None:
     """The control: parallel and antipodal directions are attainable cosines."""
 
