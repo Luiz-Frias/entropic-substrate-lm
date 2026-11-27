@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Worktree post-create ceremony — invoked by the global WorktreeCreate hook's
-# project-extension seam with CWD = the fresh worktree. Best-effort by contract:
-# report failures loudly on stderr, never block worktree creation.
+# project-extension seam with CWD = the fresh worktree; since FOR-1724 the seam
+# also passes the created path as $1 (the same tree, so this hook keeps using
+# its cwd). Best-effort by contract: report failures loudly on stderr, never
+# block worktree creation.
 #
 # Scope (narrowed 2026-10-29): this hook provisions ONLY what the helmsman
 # plugin's own WorktreeCreate hook cannot know about, the two GITIGNORED files
@@ -15,6 +17,19 @@
 #   [dependency-groups]); `uv sync --dry-run` and `uv sync --dry-run --all-groups`
 #   both report "Would make no changes" on an --all-groups venv, while
 #   `--no-dev` would uninstall 118 packages, so the dry-run does see removals.
+#
+#   RETRACTED 2026-11-05 (FOR-1724): the 2026-10-29 premise above, that the
+#   plugin's worktree-post-create.sh already ran `uv sync` in every fresh
+#   worktree so this hook synced it a second time, was wrong. The plugin wired
+#   that ceremony to WorktreeCreate, a creator event whose hooks run in the
+#   CREATING checkout. Measured 2026-11-05 (spawns 15:21Z and 16:47Z): the
+#   conductor checkout's receipt read `Provisioned: mise,prek,uv` while the
+#   fresh worktrees carried the creator's stamp only. So from 2026-10-29 until
+#   FOR-1724 nobody synced a fresh worktree here. Since FOR-1724 the user-scope
+#   creator runs the pack's worktree-ceremony.sh once in the new worktree
+#   (tracked-marker-gated mise and `uv sync`) before this extension, and "the
+#   plugin hook" below means that ceremony. This hook keeps .env and
+#   justfile.local. The uv 0.13.5 equivalence measurement above still holds.
 #
 #   3. .env — GITIGNORED, so `git worktree add` does NOT carry it over. A fresh
 #      worktree therefore has no R2 / HF / RunPod credentials, and anything that
