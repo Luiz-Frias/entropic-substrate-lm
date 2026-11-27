@@ -94,7 +94,7 @@ shows 11 stale L4d commits. Their own change is `git diff 391693b8..<ref>` `[rel
 
 | item | state |
 | --- | --- |
-| the sprint manifest on main | wrong: `.claude/workflows/sprint-manifest.json` marks L4a, L4b and L4c `queued`; only the L4d ref marks them done `[relayed]`. Correcting it is a tracked change the refactor's first horizon owns |
+| the H1 sprint manifest | on main it is wrong: it marks L4a, L4b and L4c `queued` `[relayed]`. The refactor's prelaunch commit rotates it to `.claude/workflows/sprint-manifest.h1-groundwork.json`, archived, with those three corrected to `done` and the eight unstarted phases `retired` `[measured]`. `.claude/workflows/sprint-manifest.json` is the platform refactor's manifest from that commit on |
 | the W3 base pointer `results/h1-dev-quote-v4.499aca.dvc` | not found: no file of that name under the repository root in either checkout `[measured]`, and no commit carries the path `[relayed]`. The DVC remote was not queried. Treat it as lost until someone locates it |
 | the DH-34 confirming quote pods | not run; spend and an operator GO, and frozen while reader members move |
 | every path in the H1 briefs | stale after the refactor; re-measure each anchor before use |
