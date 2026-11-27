@@ -3,7 +3,8 @@
 Written 2026-10-30 on the read-only survey worktree `entropic-substrate-arch-survey-842143` at
 `b9c570e0535c228c6bd4ea975ad87749bd6d7030` (main). It records the operator rulings of
 2026-10-30 and the target end state for a sprint that starts **only after H1 completes entirely**
-(ruling T1). Nothing in this plan authorizes a lane, a pod, or a push. Before the first lane
+(ruling T1; SUPERSEDED 2026-11-27 by R12, the sprint now runs before H1 resumes). Nothing in
+this plan authorizes a lane, a pod, or a push. Before the first lane
 launches, the repo `CLAUDE.md` gains a north star and horizon section for this initiative
 (house rule: no development without both) and a sprint manifest is ratified.
 
@@ -12,6 +13,14 @@ launches, the repo `CLAUDE.md` gains a north star and horizon section for this i
 doctrine body, pattern card, playbook and the TypeScript, Rust and Python packs against this
 plan. Its amendments are folded below in place, each marked "Amended 2026-11-01"; rulings R8 to
 R10 record the operator's answers to D8 to D10; D11 was opened and ruled the same day as R11.
+
+**Amended 2026-11-27 (rung seven)** from the source review
+`docs/reviews/2026-11-27-platform-refactor-source-review.md`, which read every file under `src`
+and `tests` at `5f6b6dd92b9da007624ce255492f55b779fd4bfd` (v0.12.3, 157 commits past this plan's
+SHA), and from the operator's rulings of the same day, recorded as R12 to R25. The section
+"Rung seven" near the end restates the context, the topology and the phases, and it governs
+wherever an earlier section disagrees. Earlier text is kept and marked RETRACTED or SUPERSEDED
+at each point of conflict, so the history of each claim stays readable.
 
 **Evidence labelling.** Every number carries `[M, <source>]` measured or `[E]` estimated. Measured
 and estimated values never share a row without a per-row label. The survey this plan reads from
@@ -35,6 +44,10 @@ tracers, 3 Opus refuters; 30 agents, 702 tool calls `[M, workflow usage]`) measu
 | subpackage two-cycles inside `ladder` | 4 (gate/run, analyze/gate, file/review, file/gate) | `[M, same; subpackage_edges]` |
 | debt items with a file citation surviving verification | 129 | `[M, survey.json]` |
 | file citations re-checked / bad | 683 / 21 | `[M, survey.json]` |
+
+RETRACTED 2026-11-27 as a description of the current tree: these are the `b9c570e0` counts. At
+`5f6b6dd9` the package is 401 files, the `ladder` cycles are five and the tests are tiered; see
+"Context restated" under rung seven.
 
 The five-layer contract in `.importlinter` (`kernel < core < ladder < historical|__legacy <
 composition`) holds at the layer level. Below it the tree mixes two axes that the contract does
@@ -62,6 +75,10 @@ D1 `ladder/run/campaign` plus `transport` (mailbox over an object store, sequent
 controller) and H `ladder/run/h_probe_*` plus `worker_*` (hash-bound request, watchdog process,
 once-only allocation) `[M, lanes ladder-run-campaign, ladder-run-core]`.
 
+RETRACTED 2026-11-27: "three training pipelines" undercounted at this plan's own SHA. The source
+review counts five model-training loops and five checkpoint custodies, plus two probe-fit loops,
+and finds that neither pod machinery absorbs the other `[R, source review section 1.1]`.
+
 Six systemic seams explain most of the 129 debt items `[M, system page, Tech debt tab]`:
 per-module strict-codec helper copies, nine hand-written SHA-256 validators, eight
 twice-declared names, stale measured-claim comments from the hexagonal re-layout, seven
@@ -82,6 +99,11 @@ digest seam, codec seam) are prerequisites and run before this sprint, on the cu
 | operator entry points | `scripts/entrypoints.env`, six names, one pointing into `historical` | 6 | `[M, file]` |
 | environment-bound settings | five names | 5 | `[M, grep]` |
 
+RETRACTED 2026-11-27: the checkpoint tuple is 54 strings, not 52 `[M, ast parse at 5f6b6dd9]`;
+the schema literals are 348, the 64-hex literals three and the environment names 18 to 21
+`[R, source review section 2]`. Two of those names, `ENTROPIC_ALLOW_UNGATED` and
+`ENTROPIC_CKPT_TAU_SEMANTICS`, fit none of the three classes in the seam section and need one.
+
 The manifest habit exists. What is missing is one seam stating which values are environment
 selection and which are code identity.
 
@@ -92,7 +114,7 @@ selection and which are code identity.
 | # | ruling | consequence |
 | --- | --- | --- |
 | R1 | The ladder protocol (register, run, capture, analyze, review, file, gate) is **platform**. The D1 four-arm family, the D2 to D5 rung specs, the factorial analysis and the D1 filing roles are a **series**. | `platform` is series-neutral; `series/d` holds the D-specific implementations of the platform ports. |
-| T1 | The sprint runs as **its own sprint after H1 completes entirely**. | No topology move lands on the H1 trunk. The debt plan's phases 0 to 2 may land before, as rails on the current trunk. |
+| T1 | The sprint runs as **its own sprint after H1 completes entirely**. | No topology move lands on the H1 trunk. The debt plan's phases 0 to 2 may land before, as rails on the current trunk. SUPERSEDED 2026-11-27 by R12: the trigger needed a confirmatory run and instruments that no H1 phase builds, so it could not fire, and the operator reversed the order. |
 | R2 | Series plug in through an **explicit registry in composition**, shaped by the spec files below; no entry-point discovery. | The registry loads `series/*/series.toml`, binds each plugin by an allowlisted module path, and type-checks it against the ports. Amended 2026-11-01: the set of series is a promise, so `SeriesId` is a `StrEnum` in `entropic-cli` and a spec may only name a member of it; the registry refuses two specs with one `id`, checks each spec's `platform_api` against the version `ports.py` exports, binds in order sorted by `id`, wraps a plugin import failure as `PluginLoadError(series_id, cause)` and never a bare `ImportError`, hands a plugin only the ports it implements, and prints the resolved registry with every spec digest at startup without secrets; that record enters the run identity. |
 | R3 | Retirement is a **registry flag plus an admission row**. | `series/e` stays where it is when retired; its spec says `status = "retained"` and the admission table refuses new confirmatory runs. Nothing moves between directories on a status change. |
 | C1 | Infrastructure values such as hashes and pins are set from **spec files**, not code literals. | `platform.toml` and `series/<x>/series.toml`, strict-loaded, frozen, digest-bound (below). Amended 2026-11-01: every spec carries `spec_version`; the digest is over the canonical JSON of the parsed frozen value, never file bytes; numerics are a code promise and leave the spec (R10). |
@@ -115,6 +137,17 @@ selection and which are code identity.
 | D3 | Wire schema version strings | stay in code beside their codecs; one enumeration module per member gives the 343 literals a single home | a schema version names a record shape the reader promises to accept; putting it in a spec lets a config edit change what evidence is admissible |
 | D5 | Unified checkpoint custody | one platform checkpoint format with a sealed chain (the H shape) and a per-series payload slot; E and D payloads become slot contents with their own schema version. Amended 2026-11-01: the slot is a typed port, `CheckpointPayload` with `encode`, `decode` and a per-series `payload_schema` version kept in code beside its codec (D3), because an opaque series-specific mapping is the under-determined-port tell; the unified format is `platform-training-checkpoint-v3`, written only by the engine, with `h-training-checkpoint-v2`, the D1 15-key mapping and the E `format_version` file admitted read-old for one tested rollback window and deleted by a removal PR whose test proves no retained artifact needs them; sealed H0 and H1 checkpoints never migrate, replay at their epoch commit, and P3b and P6 add their rows to `docs/identity/read-old-table.md` | the H chain is the strictest of the three and already carries source and reader identity; the other two have no production confirmatory run open under T1 |
 | D6 | Second tracker adapter | Trackio, behind the same `Tracker` port MLflow sits behind; its `wandb.init/log/finish` surface also covers a W&B-compatible adapter for free. Prerequisite added 2026-11-01: the pinned Trackio release must resolve under the `exclude-newer` anchor (`2026-08-13` in `pyproject.toml`), or the anchor advances forward on its schedule, never backdated | local-first, SQLite-backed, no server to stand up in a scratch repo, optional sync to a Hugging Face Space; adopted by alphaXiv OpenResearch on 2026-10-23 `[M, @askalphaxiv post 2026-10-23; alphaXiv/OpenResearch issue 571; huggingface.co/blog/trackio]` |
+
+**Amended 2026-11-27.** The source review tested each pick against the tree; R10's variable is
+also corrected there to `TORCH_ALLOW_TF32_CUBLAS_OVERRIDE`, which the gate admits unset or `0`.
+
+| # | status after the review | amended recommendation |
+| --- | --- | --- |
+| D1 | holds, amended | the loader also refuses `inf`, `nan` and datetimes, which `tomllib` admits; the digest uses one named kernel canonical-JSON scheme; `platform.toml` carries the `runpodctl` binary digest beside its version |
+| D2 | wrong as written | membership is a promise, not a selection, and the 54 members span five target members. Each member keeps its list in code as a typed manifest; the composition root composes one frozen kernel value and hands it to the readers; the pinned value is a regime-free manifest digest. No spec carries a module list |
+| D3 | ruled 2026-11-27: R18 | reset under new family names; a generated catalog and a define-once lint are the single home, not enumeration modules |
+| D5 | reshaped | the typed `CheckpointPayload` port holds. "Readers admit v2" is struck: the loader refuses any other reader identity, and R18 removes read-old adapters everywhere. The proof is restated as decoded-payload equality with reader, measurement and wall fields excluded. Five custodies collapse, not three |
+| D6 | holds, deferred | Trackio lands after the courier fix and after the tracker's read-side consumers are re-homed, so the adapter is write-only; its conformance suite is the existing hand-enumerated `MetricSink` contract file, converted |
 
 ---
 
@@ -224,6 +257,12 @@ does not refuse an undeclared import at runtime the way Cargo does. Per-member `
 per-member tests give each crate its own gate. `historical/` and `scripts/entrypoints.env`
 retire in the last phase.
 
+SUPERSEDED 2026-11-27 in four places; "Topology, restated" under rung seven governs. The
+platform depends on the kernel only and never imports core (R13). The kernel is standard library
+only. One `ports.py` becomes a ports file per cell behind one series-facing module. The layer
+order is `kernel < platform < series < cli` with core beside the platform, imported by the
+series and never by the platform.
+
 ### Placement under R4: what is an engine, a port, an adapter
 
 | owner | what it is | what collapses into it at `b9c570e0` `[M, module index]` |
@@ -299,6 +338,12 @@ weakens; the kernel lifecycle FSM becomes a total transition function with `asse
 - `tests/` is one directory of 456 files `[M, find]`; splitting it per member is part of each
   move, not a sweep at the end.
 
+RETRACTED 2026-11-27, three of the four bullets. The tuple is 54 members and includes four
+composition modules, and D2 no longer resolves it (see the amended D2). `ModelConfig` is the
+argument of E's block factory and not a neutral kernel type, so it moves out of the kernel beside
+`build_block` `[R]`. The tests were re-laid out into tier folders on 2026-11-22 and number 484
+files `[M, find at 5f6b6dd9]`.
+
 ### Four teeth that make it bind (three until 2026-11-01)
 
 1. `tests/unit/core/observation/test_identity_epoch.py` (or its per-member successor) pins the canonical digest of
@@ -320,9 +365,27 @@ weakens; the kernel lifecycle FSM becomes a total transition function with `asse
 4. Added 2026-11-01: a test fails if any `entropic-series-*` member contains a `ports` module or
    a Protocol class whose name ends in `Port`; only the platform owns ports.
 
+**Amended 2026-11-27.** Tooth 1 moves to a workspace identity tier that the commit stage runs on
+any member path, and pins regime-free manifests. Tooth 2 is red on day one until identity
+composition leaves the run layer (M2); its ast-grep rule must match the call node, because both
+sites use `from importlib import import_module` `[M, ladder/run/checkpoint.py:6]`. Tooth 4 gains
+the plugin-internal disposition for a strategy Protocol that one series owns and no other member
+imports (row D24), and the core role Protocols of R13 are its second named exception. The
+file-ceiling baseline is 1256 lines, not 1007 `[M, wc -l]`. Four teeth are added:
+
+5. A collected-test floor across every tests root: a test moved out of the stage table's reach
+   turns a gate red.
+6. An export-origin probe: the post-commit export refuses a module whose file is outside it.
+7. A residue ratchet: the count of modules not yet in a member only falls.
+8. A forwarder count of zero at every horizon tip.
+
 ---
 
 ## Phases
+
+SUPERSEDED 2026-11-27: the horizons M0 to M12 under rung seven replace this table, its waves and
+its proof list. The text below is kept as the record of the 2026-10-30 ordering and of the
+2026-11-01 amendments, several of which the horizons carry forward by reference.
 
 Sizes are file counts from the survey's series attribution `[M, survey.json series tables]`
 unless marked `[E]`. The order is forced by three facts: the member layout must exist before any
@@ -400,6 +463,172 @@ tip, with no stub reader and no placeholder status.
 
 ---
 
+## Rung seven (2026-11-27): source review, rulings and horizons
+
+Where this section and an earlier one disagree, this section governs, and the earlier text
+carries a dated marker at the point of conflict. Its evidence is the source review
+`docs/reviews/2026-11-27-platform-refactor-source-review.md`, which read every file under `src`
+and `tests` at `5f6b6dd9` and had every finding re-checked by an adversarial pass. Labels here:
+`[M, <source>]` measured by the conductor; `[R]` relayed from that review after its verifier
+confirmed or corrected it, not re-read by the conductor; `[E]` estimated. Nothing in this
+section authorizes a lane, a pod, a tag or a push.
+
+### Context restated at `5f6b6dd9`
+
+| quantity | value | evidence |
+| --- | --- | --- |
+| commits on main since this plan's SHA | 157 | `[M, git rev-list --count b9c570e0..5f6b6dd9]` |
+| files and lines under `src/entropic_substrate` | 401 files, 103,140 lines | `[M, ast facts 2026-11-27]` |
+| Python files and lines under `tests` | 484 files, 129,971 lines, in tier folders: unit 400, repo 35, integration 7, architecture 6, e2e 6, live 6, fault 2, support 19 | `[M, find and ast facts 2026-11-27]` |
+| Protocol classes under `src` | 97 | `[M, ast facts 2026-11-27]` |
+| checkpoint reader identity members | 54: composition 4, core 22, kernel 2, ladder 26 | `[M, ast parse of _READER_MODULES]` |
+| how the two reader identities are built | by string import of each member, hashing `name:digest`; the only four `import_module` lines under `src` | `[M, ladder/run/checkpoint.py:6, :139; ladder/capture/capture.py:4, :44]` |
+| largest source file | 1256 lines, `ladder/run/object_worker.py` | `[M, wc -l]` |
+| model-training loops and checkpoint custodies | five each, plus two probe-fit loops | `[R]` |
+| subpackage two-cycles inside `ladder` | five; the fifth is register and run through `ladder/register/rungs/h1_pilot.py` | `[R]` |
+| wire schema version literals | 348, of which 130 sit in 34 reader members | `[R]` |
+| planned ports that have no Protocol in `src` today | 7 of 15 | `[R]` |
+| test-to-test import edges | 387 onto 94 providers | `[M, tests/architecture/test_test_import_budget.py:31]` |
+
+### What the review changes
+
+| the plan assumed | the tree shows | consequence |
+| --- | --- | --- |
+| one reader re-pin, at P6 | the identity hashes 54 files by dotted name and bytes, and 49 of them reference `entropic_substrate.*` `[R]` | every horizon that touches a member re-pins; the identity door moves to the front (M2) |
+| tooth 2 can ship at P7 | the run layer string-imports composition to build its own identity `[M]` | tooth 2 is red on day one until identity composition moves to the composition root |
+| D2: member lists are selection and belong in `series.toml` | the 54 members span five target members and membership decides what evidence is admissible `[R]` | member lists are a promise and stay in code as typed manifests; the root composes them |
+| D5: readers admit the old checkpoint beside the new | the H checkpoint embeds the reader identity and the loader refuses any other `[M]` | replay at the epoch commit is the only window; R18 makes that the rule everywhere |
+| P2 is a pure rename of six modules | nine modules, a provenance edge, and six reader members change bytes `[R]` | P2 becomes part of the planes horizon (M5) with a re-pin |
+| three trainers, two pod machineries | five loops and five custodies; neither pod machinery absorbs the other, each has a guard the other lacks `[R]` | the engine horizon is two cells, custody and step engine; the pod horizon merges guards instead of picking a winner |
+| C2: every tracker is a mirror | on E and H the tracker is the courier that carries the authoritative JSONL off the pod `[R]` | fix the courier first; only then is the mirror claim true and a second tracker safe |
+| tests are one directory to split per move | tests are tiered, mirror `src` by directory, and the stage driver knows `tests/<tier>` literals only `[M]` | a moved test can fall out of every stage with all guards green; rails land before any move (M1) |
+
+### Rulings (2026-11-27)
+
+| # | ruling | consequence |
+| --- | --- | --- |
+| R12 | **The refactor runs now, before H1 resumes** (replaces T1). In-flight H1 work is shelved with a state note and re-implemented on the new platform. **Freeze:** while any reader-identity member is in motion, no H1 registration is sealed, no H capture is admitted, no image is re-pinned and no H pod is created. | `docs/h1/shelved-state-2026-11-27.md` is the state note. The calendar coupling to H1 is gone; the invariant that no evidence is sealed under a moving identity stays, as a predicate a repo-tier test enforces (M0). H1 resumes from the closing tip with its briefs re-anchored. |
+| R13 | **Core is the series-neutral science kit.** A module belongs in core only if all three hold: a new initiative could use it unchanged; it knows nothing of runs, checkpoints, batch custody, files or pods; its correctness is a mathematical statement checkable against an oracle. Failing the first sends it to its series. Failing the second sends it to the platform behind a port. | The platform never imports core. Core shrinks: `core/sentence` is H science, most of `core/latent` is D science, `core/substrate` is E science apart from the shared block, and the sampler and recovery records are harness pieces that land in the platform. Core may own role Protocols as structural contracts with no registry and no factory, the one named exception to "only platform members own ports". |
+| R14 | **Hybrid import naming.** The liftable set is imported as `entropic_kernel` and `entropic_platform`. Core, the three series and the cli stay under `entropic_substrate`. The library's real name belongs to the later extraction initiative, and the lift recipe carries the scripted rename. | A file landing in kernel or platform renames once, as it lands. A file landing elsewhere keeps the `entropic_substrate` root, which becomes a namespace shared by five members; the tooling proof for that is an M3 obligation and row D26. The contract "the two liftable roots never import `entropic_substrate`" is the lift boundary. |
+| R15 | **Sprint shape.** One long-lived refactor trunk off main. Horizon stacks merge to the trunk; the trunk merges to main at horizon exits. All three series run through the platform ports with tiny-fixture parity. Done is every horizon below, exited. | Merges stay the operator's. Rebasing the shelved H1 refs is deferred past the refactor. |
+| R16 | **Every reach item is in the sprint**, in this priority: member `CLAUDE.md` files and the lift recipe; the `Source` port and the RL seam; the foreign fine-tuning fixture; the Trackio adapter. | Each has a horizon below. Priority orders them when two compete for the same rail; none is optional. |
+| R17 | **The tests refactor is part of the plan, with four teeth:** a `tests/typing/` compile-fail lane; a contract test and a fake for every port; `hypothesis` round trips for every codec and digest; member gates with `deptry`, the file ceiling and mutation-proven import contracts. | "Tests refactor" below. A unit test has no destination of its own: it goes where its mirrored source directory goes. |
+| R18 | **Wire schema versions reset** (closes D3). Every wire contract gets a new family name at `-v1`. Clean break: no read-old adapter anywhere. One epoch tag on the last pre-refactor commit, plus a replay recipe, is how older evidence is read. | A reset never reuses an old family name at an old number. Sealed evidence replays at the epoch tag and never migrates. The 348 literals are not moved into enumeration modules, because that narrows the reader identity `[R]`: a generated catalog and a define-once lint give them one home, and each family is renamed in the horizon that moves its owning codec, so each literal changes once. This displaces the compat-window default for persisted artifacts, which would keep read-old for one rollback window; the ruling wins and the conflict is named here. |
+| R19 | **The platform has a fine-tuning cell.** Two ports compose into `ModelFactory`: `Spine`, a library-neutral frozen module with an identity digest and a map of its adaptable layers, and `AdapterMethod`, a closed enumeration. Standard LoRA and X-LoRA are built in the sprint; mixture-of-experts LoRA is a typed placeholder that refuses by name, with a decision-complete ticket and an expiry test. A checkpoint payload is the adapter delta plus a reference to the base identity. | Spines: `autogluon/chronos-bolt-tiny` gates in CI on a path filter and weekly; a small causal language model is a second explicit path, never a fallback; `mistralai/Timestral-5M`, `amazon/chronos-2` and TimesFM 2.5 run on a monthly or quarterly cadence. No spine is switched silently on error. The operator ruled on 2026-11-27 that Timestral is included for research, to exercise the shape and not for production use, and noted that its license, listed as "other", is read before the first job downloads it. The three spines come from three libraries and Timestral is not a Transformers model `[M, Hugging Face Hub model cards 2026-11-27]`, which is why `Spine` hands the adapter a plain module and never a library type. |
+| R20 | **Hardware gates.** CPU in FP32 always gates, bitwise. Metal gates when the machine is macOS. CUDA gates when CUDA is detected. | A regime that is absent is printed as not run. It is never a silent skip and never counted as a pass. |
+| R21 | **Fine-tuning rubric.** Baseline for every method: the base digest is unchanged, only adapter parameters train, the checkpoint is a delta, a CPU re-run and a resume are bitwise equal, telemetry is read through the admissible reader, and one contract suite runs over every method. On top: a learning check with a pre-registered margin; merge equivalence within a stated tolerance; a swap by spec alone that changes the identity digest; cross-backend tolerance against the CPU reference with regime rows. | This is the D7 oracle's foreign fixture, made specific. |
+| R22 | **X-LoRA on Chronos is a bounded research component.** Research agents iterate in Blocks.team agent sessions, in a fork or scratch repository and never in this one. It ends when the one-engine horizon reaches its exit gate, or earlier on the kill rule: if it needs a whole scratch repository instead of a fork with modifications, it is dropped for time series and returned to later as research. | It never extends a horizon. Setup, aligned 2026-11-27: the Blocks key lives in Doppler, the fork is connected to the Blocks workspace, and one throwaway session measures the real machine size, because the vendor's pages disagree on it `[M, blocks.team pages 2026-11-27]`. X-LoRA in PEFT is documented for transformer-architecture models only `[M, PEFT docs 2026-11-27]`, so it is the method at risk on these spines. |
+| R23 | **Mode.** Design gates and doors are live; the build between them is autonomous. Decisions are front-loaded in the register below. Every design gate and door sends a push notification. Widening inside the path of scope is preferred, unless review shows debt that would outlive the refactor. Bug-squashing is a second pass after the refactor, except CodeRabbit major findings and Codex P0 to P2 findings. Review-fix loops are budgeted: three rounds for a horizon of mechanical moves, five for a horizon that moves a door; non-blocking findings drain to the second-pass bucket in one sweep per phase. | Spend, merges, tags and live experiments return to live under any clearance. |
+| R24 | **One version for the whole workspace during the refactor.** Per-member versions arrive as the last step, one appended commit at the trunk tip after the closing horizon. | Release automation keeps one lane until that commit. |
+| R25 | **The freeze is full, and the refactor closes with a thread-intact check** (ruled 2026-11-27 with D14). No H pod of any kind runs until the closing identity pin. At the close, an H pod run that already has results is run again on the refactored tree, and the two are compared end to end: pipeline stages, the telemetry read through the admissible reader, the stderr readout and the logs. | One of M12's quality checks. It is a functional comparison, not a bitwise one, because R18 renames every wire family. It spends money, so it needs a fresh GO with the balance said aloud, and its pod is torn down when its own run ends. |
+
+### Topology, restated
+
+The platform member is a rosette: one center, ring cells, and planes each cell touches through
+one thin port. A seventh port on a cell means a conflated port or a cell to split. The series
+face one module, `entropic_platform.ports`; each cell keeps its own ports file behind it, because
+one file holding seventeen named ports fails that count `[R]`.
+
+| member | import root | depends on | holds |
+| --- | --- | --- | --- |
+| `entropic-kernel` | `entropic_kernel` | standard library only | zero-carry values, the strict codec, two named canonical schemes, digest types, the spec loader, paths, and a `testing` extra with the pytest plugin. `config.py`, `checkpoint.py` and `logging.py` leave first `[R]` |
+| `entropic-platform` | `entropic_platform` | kernel | the cells and planes below, `ports.py`, and `testing` with a fake per port, a toy series and the contract suites |
+| `entropic-core` | `entropic_substrate.core` | kernel, torch | the science kit of R13; no registry, no factory |
+| `entropic-series-e`, `-d`, `-h` | `entropic_substrate.series.<id>` | platform, core | plugin cells: they implement platform ports and own none; a strategy Protocol internal to one series is allowed (row D24) |
+| `entropic-cli` | `entropic_substrate.cli` | everything | the one composition root: registry, `SeriesId`, command service, every process main, reader identity composition; the only place a string import is legal |
+| residue | `entropic_substrate.*` not yet in a member | everything landed | a migration vehicle counted by path; its module count only falls, and it is zero at close |
+
+| cell or plane | kind | owns | notes |
+| --- | --- | --- | --- |
+| engine | center | `ModelFactory`, `Objective`, `Source`, `PhasePlan`, `LearningRateLaw`, `StepHook` | `Schedule` in the 2026-10-30 list fused a learning-rate law with a phase plan `[R]` |
+| custody | ring | `Journal` with append and seal, `CheckpointPayload`, phase-start admission | split from the engine so readers can build one without the other `[R]` |
+| tuning | ring | `Spine`, `AdapterMethod` | R19; composes into `ModelFactory` |
+| pod | ring | `Workload`, `ControlLedger`, `Guard`; a lifecycle with `Succeeded`, `Failed` and `ExhaustedPending` | two guards per pod `[R]` |
+| register | ring | run-class admission, roster, preregistration | `Admission` in the 2026-10-30 list was three capabilities `[R]` |
+| capture and analyze | ring | `TelemetrySchema` with a typed record envelope, `AnalysisStrategy` | |
+| review, file, gate | ring | the arm set as a series parameter, `FilingRoles` cut thin, a factory-only filed-evidence mint | filed evidence is a public dataclass today, so the typestate claim fails at the gate until this lands `[R]` |
+| sources | ring | the curriculum family and the refusing environment family behind `Source` | R9, R11; `Source` is cut thin now: next batch, snapshot, restore, order digest |
+| observability | plane | `MetricSink` emit with a typed envelope; `Tracker` as an adapter-side mirror | one emit port for every cell; four peer ports was the quadratic shape |
+| storage | plane | `ArtifactStore`, `ObjectStore` | capability-shaped; D1's DVC-named ports are not promoted verbatim `[R]` |
+| infra | plane | `Provider`, `Billing`, `ProcessRunner`, `GitFacts`, `Isolation` | eighteen Protocols collapse to about four `[R]` |
+
+Port groupings above are `[E]`; the M6 design gate fixes them. Walls with measured traffic get a
+contract directory owned by the cell on the stable side: engine to series, engine to pod, pod to
+host, custody to readers, evidence to series. The protocol order from register to gate is a thin
+wall, held by folders and import direction once seven misfiled modules move `[R]`. Where each of
+the 401 files lands is the review's section 3.5, and its target column is unverified scout
+classification; each horizon's gate re-measures its own touch-set before a file moves.
+
+### Horizons
+
+These replace phases P0 to P7. Five rules order them: the identity door comes before any reader
+member moves; a module moves only when everything it imports has moved or dies in the same
+horizon; unification comes before the series move, so a split file is written once at its final
+address; no forwarder exists at any horizon tip, only between a lane tip and its zip rewrite; and
+each member-touching horizon ends in one conductor re-pin.
+
+| horizon | done enough when | oracle | door | reader re-pin |
+| --- | --- | --- | --- | --- |
+| M0 flush, freeze, charter | the freeze predicate, and the north star and horizon for this initiative, are in the repo `CLAUDE.md`; the sprint manifest is ratified with corrected H1 statuses; the epoch tag exists; the debt plan's phases are a tracked ledger | a repo-tier test goes red when an H1 result pointer or a filled preregistration identity row appears while the manifest is open; every unmerged ref is classified by patch equivalence before any delete | none; records R12 | none |
+| M1 rails before motion | a moved or unregistered test turns a standing gate red; the stage table travels with the tree; the import rewriter handles all three import forms and string patch targets on a dry run; paths ruled dead are gone | `just check` and the pre-push stages green at a pinned SHA; `tools/regime_rows.py` output byte-identical before and after; mutation proofs for the collected-test floor and the export-origin probe | none | none, proven by the oracle |
+| M2 identity door | no module outside the composition root string-imports; each layer declares its reader manifest in code; the root composes one frozen `ReaderIdentity` and hands it to every reader; the pinned value is a regime-free manifest digest; test paths are gone from member comments | the identity test goes red on a one-byte member edit, a manifest shape edit and a re-ordered composition; zero `import_module` call nodes outside composition; each of the 22 direct non-member imports is a member or a reasoned exclusion | the reader identity function, under new family names per R18 | the door itself |
+| M3 workspace skeleton and spec door | seven members and the residue resolve under one lockfile; each empty member's gate runs from a bare directory; the strict spec loader refuses duplicates, unknown keys, non-finite values and datetimes; `platform.toml` carries the tool pins and the image digest; the liftable-root import ban is in force; the namespace shared by five members resolves under every gate tool | a changed pin turns the identity tier red; `uv sync --all-packages` from a fresh worktree; the import ban red under mutation; the nested `CLAUDE.md` sentinel measurement recorded PRESENT or ABSENT; import-linter, basedpyright, deptry and pytest each shown to resolve the shared namespace | configuration | none if the loader lands at its final kernel path |
+| M4 kernel and core members | `entropic_kernel` imports only the standard library; one digest type, one commit type and two named canonical schemes exist and the clone definitions are deleted; core holds only what passes R13 | the kernel gate passes in an environment without torch, yaml or loguru; golden vectors per canonical scheme; the residue count falls | none; the two schemes are pinned, never merged | yes |
+| M5 platform planes and the shared pod kernel | the nine D1-named shared modules are series-free platform leaves; `ObjectStore`, `ArtifactStore`, `GitFacts`, `ProcessRunner` and `MetricSink` each ship a fake and a contract test; no host pod file imports torch for a key-set check | the import closure of the RunPod adapter and of the H worker excludes every D module; the contract suite green over each real adapter and its fake; the live gate green | none | yes |
+| M6 ports, registry, testing kit | all 97 Protocols carry a disposition; each surviving platform port has a fake, a contract test and a named second option; the registry binds E, D and H in place through typed specs; a toy series runs through every port; `Spine` and `AdapterMethod` are shaped; the RL placeholder refuses by name | registry tests for its fitness functions; a `tests/typing/` fixture per typestate; each series tiny smoke equal through the admissible reader; the census of exact-type collaborator pins reads zero | the run-start record and the platform API version | yes, one batched commit |
+| M7 one custody, one engine | one run function, linear and total, drives E, D1 and H as phase tuples; one sealed chain with typed payload slots is the only checkpoint written; the five loops are deleted or retired by ruling | per series: decoded payload tensors, optimizer moments, RNG and source snapshot equal to the retired trainer's, with reader, measurement and wall fields excluded; resume from a seal reproduces the next-batch order digest; the engine file passes the ceiling | checkpoint custody, a new family at `-v1`, written only by the engine | yes |
+| M8 one pod machinery | D1 and H launch through one lifecycle, one provider adapter and two guards per pod; teardown is verified by observed absence; H observability files leave the pod through object custody after the run finishes | against the shipped fake provider: a pod with no progress inside its sealed budget ends `ExhaustedPending` and is torn down; a dead controller's pod is deleted by the guard; a run with the tracker refused still yields an admissible metrics file | the launch door, a new family at `-v1` | yes |
+| M9 evidence protocol split | register, analyze, review, file and gate form a directed graph with no cycle; filed evidence is factory-only and the gate mints from it; alias custody, the attempt ledger and the factorial terms are generic over a series arm set | a layers contract over the protocol subpackages red under mutation; a compile-fail fixture for hand-built filed evidence; replay equality on every retained D1 fixture | the D reader-identity field family and the D1 capture manifests | one D-side re-pin |
+| M10 fine-tuning cell and foreign fixture | LoRA, and X-LoRA if its spike survived, train an adapter on `chronos-bolt-tiny` and on the causal language model through the one engine; the delta checkpoint resumes; the periodic job can run the three larger spines | the R21 rubric under the R20 gates; the CI job on its path filter and weekly schedule; the mixture-of-experts placeholder's expiry test | none | none |
+| M11 series members | each series member holds only adapters, specs, configs and tests; no series imports another; each member's gate is green from a bare directory | per-series tiny tracer or smoke equal through the admissible reader; the member copy test | reader identity keys for the H members | yes, H lane only |
+| M12 composition root, teeth, lift, close | the residue is deleted; `historical/` and `entrypoints.env` are gone; every contract and tooth is in force; member `CLAUDE.md` files are complete; `docs/platform/lift.md` and its scripted rename pass the copy test; the Trackio adapter is write-only behind `Tracker`; the plan-versus-actual audit is filed; the freeze is lifted by a filed ruling | each import-linter contract red under a one-line mutation and green on revert; residue and forwarder counts are zero; no pre-reset family name remains outside the replay recipe; a fresh image builds and its regime row is captured after the freeze lift, under an operator GO; the thread-intact pod comparison of R25 | the image regime and the closing identity pin | the closing pin |
+| finally | per-member versions | one appended commit at the trunk tip | release lanes | none |
+
+| shape | horizons |
+| --- | --- |
+| serial rails | M0, M2, M3, M4 kernel then core, M6, M7, M8, M12 |
+| parallel lanes inside one horizon | M1 three lanes; M5 three lanes; M11 three lanes |
+| beside the M7 to M8 rail, after M6 | M9, and M10 once M7 exits, only when the conductor has measured touch-set disjointness; same axis means stop |
+| conductor only | every re-pin commit, every zip rewrite, every hub file |
+| outside this repository | the X-LoRA spike of R22, from M6 until M7's exit |
+
+Old phase to horizon: P0 becomes M0; P1 splits into M1 and M3; P2 becomes part of M5; P3a is M6;
+P3b is M7; P3c is M8; the protocol half of P5 is M9; P4, the D half of P5 and P6 are M11; P7 is
+M12. M2 and M10 are new.
+
+### Tests refactor
+
+| piece | what | horizon |
+| --- | --- | --- |
+| collected-test floor | a standing gate that enumerates every tests root and fails when a stage's collected count drops or a file is selected by no stage | M1, before any move |
+| export-origin probe | the post-commit export refuses any module whose file is outside the export | M1 |
+| pytest plugin | the suite lock, markers, git isolation, RNG and logging leave `tests/conftest.py` | M1 in place; M4 into `entropic_kernel.testing` |
+| identity tier | the door test runs at commit on any member path | M2 |
+| workspace and member roots | the path helper offers both; each of its 78 importers picks one `[R]` | M3 |
+| testing kit | port fakes, a toy series and contract suites in `entropic_platform.testing`; thirty or more per-file doubles collapse `[R]` | M5 and M6 |
+| edge budget to a ban | cross-member test-to-test edges reach zero; the ratchet becomes a path-keyed ban | by M6 |
+| string targets | 43 string monkeypatch targets in 11 files are rewritten with each move; a test asserts each resolves to its defining module `[R]` | every move |
+| typing lane | a `tests/typing/` fixture per typestate, run by basedpyright with unused-ignore reporting on | M6 onward |
+| round trips | `hypothesis` round trips for each codec and each digest scheme | M4 onward |
+| workspace tier | architecture, repo, e2e, live, identity and cross-member scans stay at the root | shaped at M3, populated as members land |
+| data marker | the four integration files that read DVC fixtures carry a named marker the copy test deselects, never a skip | M11 |
+| path-anchored config | the basedpyright hook pattern, ruff excludes, the secrets baseline and three recipes key on `src/` and `tests/` | M3; the hook file is an operator ask |
+
+### How the sprint runs
+
+- **Vehicles.** A horizon that moves a door or needs a design judgment runs as one arch-gated
+  lane: M2, M3, M6, M7, M8, M9. Mechanical horizons run as fanout lanes with one conductor zip:
+  M1, M5, M11.
+- **Publishing.** `just stack` then `just ship-it`, or `just ship-it-full` where the stack
+  touches the paths that recipe names. No push to main, tag or merge without a greenlight on
+  that action.
+- **Gates.** Each horizon exit names the SHA its green claim is pinned to and the instrument
+  that produced it.
+- **Second pass.** Findings that do not block drain into one tracked bucket per phase and are
+  worked after M12.
+
+---
+
 ## Risks
 
 | risk | likelihood / impact | mitigation |
@@ -414,22 +643,49 @@ tip, with no stub reader and no placeholder status.
 | A file-bytes digest re-pins identity on whitespace, or a parsed-value digest hides a type change (added 2026-11-01) | medium / medium | the digest is over canonical JSON of the typed frozen value (D1); tooth 1's round trip pins both directions |
 | An environment variable layers silently over a spec after the move (added 2026-11-01) | medium / high | the five names are classified once (seam section); the CLI prints the effective configuration and its digest at startup; numerics names are refused, not read |
 
+**Amended 2026-11-27.** Row one's mitigation cited T1 and is replaced by the freeze predicate of
+R12. Row two's read-old adapters are struck by R18. Row five's "one wave" becomes zero
+forwarders at every horizon tip. The source review's section 6 adds eleven risks, each with the
+test that proves its mitigation; they bind here by reference. Three more follow from the rulings:
+
+| risk | likelihood / impact | mitigation |
+| --- | --- | --- |
+| An H1 seal, capture or pod opens under an intermediate identity | low under the freeze / high | the repo-tier freeze test of M0, red when an H1 result pointer or a filled preregistration identity row appears while the manifest is open |
+| The clean break of R18 strands evidence because the epoch tag or the replay recipe is missing or wrong | low / high | M0 creates the tag before any wire name changes; M12 replays one H0 capture and one retained D1 fixture from the recipe alone, on a fresh clone |
+| The `entropic_substrate` namespace shared by five members defeats a gate tool | medium / medium | M3 proves import-linter, basedpyright, deptry and pytest each resolve it before any file relies on it; a failure is row D26, never a workaround |
+| The X-LoRA spike pulls the engine horizon off its path | medium / low | R22: it runs outside this repository and ends at M7's exit or on the kill rule |
+
 ---
 
 ## DECISION-NEEDED register
 
 | # | decision | recommendation | status |
 | --- | --- | --- | --- |
-| D1 | spec format | TOML for platform and series specs; YAML stays for experiment hyperparameters | open |
-| D2 | reader-identity member lists in `series.toml` | yes, with the spec digest pinned by the identity test; composed identity by concatenation in registry order | open |
-| D3 | wire schema version strings | stay in code, one enumeration module per member | open |
-| D4 | start trigger | H1 filed complete (its exit in `CLAUDE.md` Horizon) | ruled T1 |
-| D5 | unified checkpoint custody | the H sealed chain with a per-series payload slot | open |
-| D6 | second tracker adapter | Trackio behind the `Tracker` port; W&B-compatible surface comes with it | open |
+| D1 | spec format | TOML for platform and series specs; YAML stays for experiment hyperparameters. Amended 2026-11-27: the loader also refuses `inf`, `nan` and datetimes; one named kernel canonical-JSON scheme; the `runpodctl` binary digest joins the pins | open; the review found it holds |
+| D2 | reader-identity member lists in `series.toml` | RETRACTED 2026-11-27: yes, with the spec digest pinned by the identity test. Amended recommendation: no. Member lists stay in code as one typed manifest per member, composed at the composition root into one frozen kernel value, pinned as a regime-free manifest digest, under new family names per R18 | ruled 2026-11-27: the amended recommendation, as the first door (M2) |
+| D3 | wire schema version strings | stay in code; reset under new family names at `-v1`, clean break, one epoch tag plus a replay recipe; a generated catalog and a define-once lint instead of enumeration modules | ruled 2026-11-27: R18 |
+| D4 | start trigger | H1 filed complete (its exit in `CLAUDE.md` Horizon). Replaced 2026-11-27: the flush of M0 done and the freeze predicate in force | ruled T1; superseded 2026-11-27 by R12 |
+| D5 | unified checkpoint custody | the H sealed chain with a per-series payload slot. Amended 2026-11-27: custody and step engine are two cells; no read-old adapters (R18); proof by decoded-payload equality with reader, measurement and wall fields excluded; three engine doors are row D17 | open; gates M7 |
+| D6 | second tracker adapter | Trackio behind the `Tracker` port; W&B-compatible surface comes with it. Amended 2026-11-27: write-only, after the courier fix of row D19, in M12 | open; in scope by R16 |
 | D7 | platform member north star and horizon | written before P1, in the member's own `CLAUDE.md`, stating the library bearing of R6 and the reach (which harness shapes it must host before it is sufficient); separate from the repo's north star and horizon, which stay in the root file. Amended 2026-11-01: the horizon names its oracle, the three series tiny fixtures plus one foreign fixture (a LoRA fine-tune of a tiny public checkpoint, the smallest shape R6 names) run through the one engine with telemetry compared through the admissible reader; the Tinker sentence becomes a four-row parity matrix (forward-backward, optimizer step, sample, save state) or is removed; the horizon closes with the plan-versus-actual audit | ruled 2026-10-30: separate documents |
 | D8 | how a scratch repository consumes the platform | both modes first class: pinned dependency by default, lift (clone or fork keeping history, refactored to the new repository's goals) as the operator's alternate; the lift recipe is implemented and tested, never optional | ruled 2026-11-01: R8 |
 | D9 | fold `Curriculum` and `Environment` into one `Source` port | yes; `Curriculum` is the supervised family with the FineWeb-Edu, enwik8 and enwik9 pipeline planned; `Environment` is the RL family behind an `EnvironmentAdapter` port and factory, implemented now as a typed refusing placeholder with an expiry test | ruled 2026-11-01: R9 |
 | D10 | remove `[numerics]` from `platform.toml` | yes; the FP32 islands are a code promise, `require_execution_precision` stays a gate, the ambient dtype is the only selectable numerics value and lives in the run profile | ruled 2026-11-01: R10 |
 | D11 | which external environment API the `EnvironmentAdapter` speaks (opened 2026-11-01 under R9) | shape the port on Gymnasium's `reset`/`step` contract with `terminated` and `truncated` kept distinct, the de facto standard maintained by the Farama Foundation; make TorchRL `EnvBase` the first concrete adapter, because it wraps Gymnasium environments and ships `torchrl.envs.llm.ChatEnv`, `LLMCollector`, `GRPOLoss` and `SFTLoss` for LLM post-training under the PyTorch organization, so classic and LLM environments plug in through one adapter and a bespoke environment implements the port directly; defer Hugging Face TRL to the first LLM-RL objective, consuming its reward and rollout pieces rather than its trainer. Measured 2026-11-01 `[M, web]`: Gymnasium v1.4.0 released 2026-10-05 and v1.3.0 on 2026-04-22, so v1.3.0 clears the `exclude-newer` anchor and v1.4.0 needs it advanced; TorchRL's LLM API arrived in 0.9.0 on 2025-07-10 and the current release is v0.14.1 (release date not read) | ruled 2026-11-01: R11, the recommendation as written |
+| D12 | L4d, the closed PR 435 at `35b0b687`: land it before any move, or keep it shelved (opened 2026-11-27) | keep it shelved under R12, and have the M6 and M7 design gates read the ref as the measured second consumer of the engine's evaluation hook. The source review dissents and recommends landing it first: it is two commits behind main and ten of its sixteen source files are split targets, so resuming means re-implementing about 445 lines by hand `[R]`. Against landing: no green exists at that head, its review ran eight rounds against a budget of five, it needs the live gate and a release, and R18 resets its evaluation record family anyway | ruled 2026-11-27: kept shelved, read as design input |
+| D13 | the two tests-only refs, the L4e golden and the FOR-1713 pins (opened 2026-11-27) | port both into M1 as rails by cherry-pick with relocation. They change no source, cost no re-pin, and are the equivalence proofs for moving segmentation and the codec hand-off | ruled 2026-11-27: port both as rails in M1 |
+| D14 | does the freeze of R12 also hold the DH-34 quote pods until the closing pin (opened 2026-11-27) | yes | ruled 2026-11-27: yes, a full freeze, with the closing check of R25 |
+| D15 | names: the refactor trunk branch and the epoch tag, and who creates the tag (opened 2026-11-27) | trunk `refactor/platform-topology`; tag `epoch-pre-platform-refactor` on the main commit the trunk branches from, created and pushed by the operator or under an explicit greenlight on that action | ruled 2026-11-27: both names adopted; the operator greenlit the conductor to create and push that one tag |
+| D16 | the charter: a north star and horizon for this initiative in the repo `CLAUDE.md`, and the platform member's own under D7 (opened 2026-11-27) | the conductor drafts both in M0 from R6, R12 to R25 and the horizons; neither lands without the operator's approval of the text | ruled 2026-11-27: the conductor drafts, the operator approves |
+| D17 | engine doors (opened 2026-11-27): durability cadence; evaluate before or after the seal; E's RNG custody | per-step append with a seal-time digest; seal, then evaluate bound to that seal; E adopts full custody for new writes | ruled 2026-11-27 as a provisional default, confirmed at the M7 design gate |
+| D18 | pod doors (opened 2026-11-27): one launch door carrying a provider deadline, one `runpodctl` pin, opaque request bytes and a single run as a pair of one; D1 onto H's one-way request; pending billing as `ExhaustedPending`; the stall budget as a sealed field | yes to each; measure `--terminate-after` and the billing listing on the pinned `runpodctl` before the gate | ruled 2026-11-27 as a provisional default, confirmed at the M8 design gate |
+| D19 | C2 reshaped (opened 2026-11-27): fix the courier before any second tracker; turn the tracker startup abort into a refused mirror row afterward; one thin emit port; delete the strict D1 chain that only tests construct | yes to each; scope the courier fix to H, since E pods are credential-free by ruling | ruled 2026-11-27 as a provisional default, confirmed at the M5 and M8 gates |
+| D20 | evidence protocol (opened 2026-11-27): the filing minimum; whether H1 files through the platform protocol; the authority trust model | the kernel's three identities plus a series-declared custody profile, not D1's thirteen roles; yes; the factory-token model | ruled 2026-11-27 as a provisional default, confirmed at the M9 design gate |
+| D21 | the kernel cut (opened 2026-11-27): standard library only; `ModelConfig` beside `build_block`; `Codec` as a platform port; the hand-written strict codec kept over a validation library | yes to each, with the last recorded as a named deviation in the kernel member's `CLAUDE.md` | ruled 2026-11-27 as a provisional default, confirmed at the M4 gate |
+| D22 | paths only tests construct (opened 2026-11-27): wire each, or delete | delete unless a constructing production caller is named; the M1 gate lists every one by path before deleting | ruled 2026-11-27: delete, with the list shown to the operator first |
+| D23 | tests (opened 2026-11-27): member-rooted rootdir; the pytest plugin in `entropic_kernel.testing`; folder is kind, with `slow` the only cost marker; one workspace CI job; three edits to `.pre-commit-config.yaml` | yes to each; the hook file edits are asks made at M1 and M3 with the exact diff shown, never lane actions | ruled 2026-11-27: adopted as a bundle; each hook file edit is still its own ask |
+| D24 | may a series own a strategy Protocol that is not a platform port (opened 2026-11-27) | yes, as plugin-internal: tooth 4 refuses `ports` modules and any Protocol another member imports | open; gates M6 |
+| D25 | facts only the operator holds (opened 2026-11-27): does sealed D1 evidence exist that must still replay; is the D2 to D5 lane alive; what runs E field pre-training after `historical/` retires; where is the debt plan; should the detail-preservation instruments be filed as an H1 ticket now | retire D2 to D5 under R3 unless a capture exists; bind E field pre-training to the one engine as an E adapter; commit the debt plan's phases as a tracked ledger in M0; file the ticket | ruled 2026-11-27: no sealed D1 evidence exists; D2 to D5 retire under R3; E field pre-training becomes an E adapter on the one engine with a parity check before the old loop is deleted; the debt ledger is committed and the H1 ticket filed in M0 |
+| D26 | fallback if a gate tool cannot resolve the `entropic_substrate` namespace shared by five members (opened 2026-11-27 under R14) | measure first, in M3. On a failure, give the failing members their own roots and keep R14's boundary, the two liftable roots, unchanged | open; decided only if M3's measurement fails |
 
 Rulings are recorded here, in this file, on the commit that records them; chat is transport.
