@@ -80,7 +80,7 @@
         }
       ],
       "parallel_group": null,
-      "status": "active",
+      "status": "done",
       "notes": "Conductor-only, never launched. Resolves the consumed-before-owned HALT (Q2). a50ea2a8 carries the plan; the rotation commit on the same branch carries both manifests and the preflight notes. Umbrella issue FOR-1728 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
     },
     {
@@ -174,7 +174,7 @@
         }
       ],
       "parallel_group": null,
-      "status": "queued",
+      "status": "active",
       "notes": "PARTIAL. Epoch tag ALREADY DONE: do not re-create it. The H1 ticket (D25) is a Linear write. Hub owner: CLAUDE.md. Umbrella issue FOR-1729 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
     },
     {
