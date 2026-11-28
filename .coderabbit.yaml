@@ -82,6 +82,14 @@ reviews:
   auto_review:
     enabled: true
 
+    # Bases other than the default branch. Without this only pull requests
+    # into `main` are reviewed: measured 2026-11-28, pull requests 446 to 455
+    # (bases: the trunk `refactor/platform-topology` and branches stacked on
+    # it) were all skipped. Entries are regular expressions and are NOT
+    # anchored unless written so. Pinned by tests/repo/test_coderabbit_config.py.
+    base_branches:
+      - "^refactor/.*$"
+
     # Ignore specific file patterns
     ignore_title_keywords:
       - "WIP"

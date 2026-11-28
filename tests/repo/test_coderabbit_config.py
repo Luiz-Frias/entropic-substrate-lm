@@ -18,6 +18,7 @@ the schema shrugs.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import jsonschema
@@ -61,6 +62,24 @@ def test_no_silently_ignored_top_level_keys() -> None:
 def test_abort_on_close_lives_under_reviews() -> None:
     """Valid key, wrong level was the original defect — pin the right level."""
     assert "abort_on_close" in _config()["reviews"]
+
+
+def test_auto_review_covers_the_refactor_trunk_and_its_stacked_bases() -> None:
+    """CodeRabbit auto-reviews only pull requests based on the default branch
+    unless ``reviews.auto_review.base_branches`` names more. Measured
+    2026-11-28: it skipped pull requests 446 to 455, whose bases were the
+    trunk ``refactor/platform-topology`` and branches stacked on it. Entries
+    are regular expressions and are not anchored unless written so.
+    """
+    patterns = _config()["reviews"]["auto_review"].get("base_branches", [])
+    for base in ("refactor/platform-topology", "refactor/tests/m1-rails-before-motion"):
+        assert any(re.search(pattern, base) for pattern in patterns), (
+            f"no reviews.auto_review.base_branches entry matches {base!r}"
+        )
+    for base in ("feat/refactor/thing", "h1-l4e-segmenter-alignment"):
+        assert not any(re.search(pattern, base) for pattern in patterns), (
+            f"a base_branches entry matches {base!r}; anchor the pattern"
+        )
 
 
 def test_path_filters_live_under_reviews_not_auto_review() -> None:
