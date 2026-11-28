@@ -1,1086 +1,1868 @@
 {
   "spec_version": "1",
-  "sprint": "H1 preservation pilot groundwork (FOR-1685..1700; W1-W4)",
-  "trunk": "main",
-  "verified_at": "e3d1524bbf2901a3aba8ae80ec72197e7b1ea464",
-  "generated_by": "helmsman:sprint-preflight brief assembler (final), premises re-measured at 45330219 (tag v0.9.1) on 2026-10-28; task stamp 2026-10-28T09:54:15Z carried in launch-queue verifiedAt because the schema's verified_at pattern ^[0-9a-f]{7,40}$ admits only a SHA | RATIFIED 2026-10-28 by the conductor under the operator mandate of 2026-10-28 ('implement the plan in full'; plan of record harmonic-juggling-hejlsberg.md approved 2026-10-27): the manifest mechanizes that plan with one addition, the W1 prelude h1-p0 (conductor ruling DH-23). Below-the-seam defaults Q1, Q2, Q5, Q6, Q18, Q19, Q20, Q22, Q23, Q24, Q25 are conductor-ruled; the door questions Q7-Q11, Q15, Q16, Q17, Q21, Q28 and the gate questions Q3, Q4b stay open on the H1 Sprint Chain ledger (DH-21, DH-25..DH-31) for the operator at each wave's design gate. | AMENDED 2026-10-31 at the W1 boundary by the conductor (main e3d1524b, tag v0.10.0, W1 phases done): W2 gains h1-l4d (FOR-1704, DH-32/DH-33) and h1-l4e (FOR-1706, DH-35) after L4c; the W2 phases' premises hold (their touch sets are disjoint from the W1 diff, verified by git diff ce18bc60..e3d1524b); the two new slices' anchors re-measured at e3d1524b by a read-only lane. The W3 DVC pointer results/h1-dev-quote-v4.499aca.dvc stays parked for the W3 base (DH-26). L4a starts from the W2 prelaunch commit, which carries this amendment, the two briefs and the launch queue.",
+  "sprint": "Platform refactor: series-plugin topology rung seven, horizons M0-M12 plus MF",
+  "trunk": "refactor/platform-topology",
+  "verified_at": "a50ea2a852a71d67f71f698b19d14b66ff6a107d",
+  "generated_by": "helmsman:sprint-preflight wf_3a9edf65-e85 brief assembler (final), probed at HEAD a50ea2a8 on 2026-11-27; tracker ids FOR-1728..FOR-1742 filed in Linear project P-FOR-45 by the conductor the same day | RATIFIED 2026-11-27 by the conductor under the operator instruction of that day (\"generate the current sprint-manifest.json fresh ... publish and lets begin each horizon as a sub-session\") for SEQUENCE and PHASE BOUNDARIES only: the 41 operator questions of the preflight brief (docs/plans/measurements/platform-refactor-preflight-2026-11-27.md) stay open and are ruled at each horizon gate, never defaulted",
   "ratified": true,
-  "merge_topology": "Per-wave linear stacks off main, each based on main AFTER the previous wave merges (plan of record harmonic-juggling-hejlsberg.md:86-91, :248-250; consistent with the 2026-10-12 ruling 'stack linearly off the trunk' because no two unmerged stacks ever fork from main). W1 = one stack [h1-p0 prelude, then the K=3 fanout zip L3, L1, L2], one just ship-it. W2 = serial stack L4a, L4b, L4c, L4d, L4e (L4d and L4e added 2026-10-31); every reader-member edit lands only as a conductor DG-A commit with a tools/regime_rows.py re-pin, re-pinned once more at the final restack; one just ship-it. W3 = K=3 fanout zip L7, L6, L5 from main, one just ship-it. W4 = serial: L8 (own PR), release tag, L9 from the tag (own PR), then L10 (operator GO; authority commit, DVC captures, amendment commit). For fanout lanes, `parent` records the zip's serial reading order; lanes fork from the wave base (W1: h1-p0 tip; W3: main). Operator owns every merge.",
+  "merge_topology": "One stack per horizon, each based on the trunk tip after the previous horizon merged at its exit gate (R15); never two unmerged horizon stacks. Fanout lanes in M1, M5, M11 zip into their horizon's one stack. Re-pins, zip rewrites and hub lines owned by another horizon are conductor commits. Publish with just stack then just ship-it or ship-it-full. Horizon PRs merge into the trunk; the trunk merges into main at each horizon exit; MF is one appended commit after the closing pin. Merges and tags are the operator's; the operator granted standing access to Linear, Graphite and GitHub for the sprint on 2026-11-27, under which the conductor pushes branches and registers the trunk with gt.",
   "sequence": [
-    "h1-p0-design-identity",
-    "h1-l3-observations",
-    "h1-l1-enwik8-documents",
-    "h1-l2-pilot-generator",
-    "h1-l4a-codec-handoff",
-    "h1-l4b-pair-admission",
-    "h1-l4c-remote-pair",
-    "h1-l4d-evaluation-instruments",
-    "h1-l4e-segmenter-alignment",
-    "h1-l7-sensitivity",
-    "h1-l6-block-cost",
-    "h1-l5-block-launch",
-    "h1-l8-registration",
-    "h1-l9-image-repin",
-    "h1-l10-pilot-launch"
-  ],
-  "phases": [
-    {
-      "id": "h1-p0-design-identity",
-      "title": "W1 prelude: H1 construction digest, exposure rule and block-exclusion reason vocabulary (fixtures both L2 and L3 test against)",
-      "issues": [
-        "FOR-1685"
-      ],
-      "branch": "h1-p0-design-identity",
-      "parent": "main",
-      "mode": "ratchet",
-      "engine_mode": "arch",
-      "gates": {
-        "liveRequired": false
-      },
-      "cost_class": "build",
-      "model_tier": "conductor-scoped prelude; arch forced by owning doors (schema if/then); small budget",
-      "contracts_owned": [
-        {
-          "name": "h1-construction-digest",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "h1-exclusion-reasons",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "h1-exposure-rule",
-          "kind": "contract",
-          "frozen_after": true
-        }
-      ],
-      "contracts_consumed": [
-        "trunk:HProfile manifest + identity (core/sentence/profile.py:269)",
-        "trunk:h_preservation._shared_profile pair-block predicate, read-only and deliberately distinct (ladder/register/h_preservation.py:20-25)"
-      ],
-      "touch_set": [
-        "src/entropic_substrate/ladder/register/h_preservation.py",
-        "tests/test_h_preservation.py"
-      ],
-      "conflict_edges": [],
-      "parallel_group": null,
-      "status": "done",
-      "notes": "Resolves the consumed-before-owned HALT: FOR-1691 maps `independent_warmup` to exclusion, but that name is owned by FOR-1692's CodecHandoffDefect, which lands in W2. Also resolves the digest that plan:101-102 rules 'before W1' but no issue owns. The digest is profile identity minus name and seed, per plan:101-102. It is distinct from _shared_profile, which removes name, law.mode and spine.carrier and keeps seed (h_preservation.py:20-25). It is also distinct from L4a's pair predicate. h_preservation.py is non-member: it is absent from checkpoint.py:72-126. ladder.analyze already imports ladder.register (d1_factorial.py:33). The phase adds functions only. It must not change the h1-preservation-block-v1 manifest bytes (h_preservation.py:85-90). Retire this phase if the operator rules decision Q1(b), a conductor trunk commit. MEASURED: no module under src/ imports h_preservation or H1PreservationBlock; the only importer is tests/test_h_preservation.py (grep). The edit therefore changes no reader member, and grouping lens D4 is closed for this phase. | DONE 2026-10-31: merged to main as #414 255c1187 (W1 stack #413..#417, released v0.10.0); triage loop 24 findings, 8 fix commits, 3 of 5 rounds."
-    },
-    {
-      "id": "h1-l3-observations",
-      "title": "L3 H1 observation adapter in ladder/analyze (last-5 endpoint, ESS gate as parameter, whole-block exclusion, plan_seed_count)",
-      "issues": [
-        "FOR-1691"
-      ],
-      "branch": "h1-l3-observations",
-      "parent": "h1-p0-design-identity",
-      "mode": "ratchet",
-      "engine_mode": "direct",
-      "gates": {
-        "liveRequired": false
-      },
-      "cost_class": "build",
-      "model_tier": "Opus xhigh (issue Seat)",
-      "contracts_owned": [
-        {
-          "name": "h1-observation-adapter",
-          "kind": "contract"
-        }
-      ],
-      "contracts_consumed": [
-        "h1-construction-digest",
-        "h1-exposure-rule",
-        "h1-exclusion-reasons",
-        "trunk:seed_sizing PairedSeed/PilotContrast/plan_seed_count/dual_confidence_intervals (seed_sizing.py:18,:29,:184,:251)",
-        "trunk:RungRunReader seam (ladder_analysis.py:77)",
-        "trunk:read_h_statistical_design (ladder_registration.py:150)",
-        "trunk:load_h_run/HRun (h_aggregate.py:322)",
-        "trunk:eval/log_marginal_per_byte_k64 and eval/ess_ratio_median_k64 (h_elm_projection.py:199-200)",
-        "trunk:last_k_mean estimator (d1_clause_policy.py:165; port source d1_cell_endpoint d1_factorial.py:407-429)",
-        "trunk:source_bytes step-row field (execution.py:267)"
-      ],
-      "touch_set": [
-        "src/entropic_substrate/ladder/analyze/h1_observations.py",
-        "tests/test_h1_observations.py",
-        "scripts/h1_pilot_sizing.py"
-      ],
-      "conflict_edges": [
-        {
-          "with": "h1-p0-design-identity",
-          "type": "contract",
-          "evidence": "consumes h1-construction-digest, h1-exposure-rule, h1-exclusion-reasons",
-          "resolution": "rails-before"
-        }
-      ],
-      "parallel_group": "h1-w1",
-      "status": "done",
-      "notes": "Floor (helmsman 1.7.1 td-phase-lifecycle.cascade.js:2179-2189) matches nothing in the FOR-1691 scope or acceptance text, and the phase owns no door, so the stated verdict is direct. Corrections: last_k_mean EXISTS (d1_clause_policy.py:165-166,:176,:267; d1_factorial.py:408). The gate reads eval/ess_ratio_median_k64 (h_elm_projection.py:200), which is already a ratio. It does not read eval/ess_k64 (h_metric_extractor.py:197, the raw mean). The refusal is at ladder_registration.py:276, not :275. The ESS default 0.25 is RULED (plan:55) and stays a parameter; see decision Q4. The adapter must expose per-threshold PilotContrasts for L7. scripts/h1_pilot_sizing.py is optional. | DONE 2026-10-31: merged to main as #416 8d5b5a7f (W1 stack #413..#417, released v0.10.0); triage loop 24 findings, 8 fix commits, 3 of 5 rounds."
-    },
-    {
-      "id": "h1-l1-enwik8-documents",
-      "title": "L1 enwik8 document adapter in ladder/capture/custody (one <page> per document, SplitPolicy buckets, bounded capture)",
-      "issues": [
-        "FOR-1689"
-      ],
-      "branch": "h1-l1-enwik8-documents",
-      "parent": "h1-l3-observations",
-      "mode": "ratchet",
-      "engine_mode": "direct",
-      "gates": {
-        "liveRequired": false
-      },
-      "cost_class": "build",
-      "model_tier": "Opus xhigh (issue Seat)",
-      "contracts_owned": [
-        {
-          "name": "enwik8-source-scheme",
-          "kind": "contract",
-          "frozen_after": true
-        },
-        {
-          "name": "enwik8-prepare-script",
-          "kind": "contract"
-        }
-      ],
-      "contracts_consumed": [
-        "trunk:write_prepared_corpus/read_prepared_corpus (capture.py:86,:165)",
-        "trunk:SplitPolicy (core/sentence/corpus.py:22-25)",
-        "trunk:CodecSpec.max_sentence_bytes default 4096 (codec.py:22; cap profile.py:242)",
-        "trunk:DocumentRejection oversize_sentence (corpus.py:209-213)",
-        "trunk:raw enwik8 loader (ladder/capture/custody/enwik8.py)"
-      ],
-      "touch_set": [
-        "src/entropic_substrate/ladder/capture/custody/enwik8_documents.py",
-        "scripts/prepare_enwik8_source.py",
-        "tests/test_enwik8_documents.py"
-      ],
-      "conflict_edges": [],
-      "parallel_group": "h1-w1",
-      "status": "done",
-      "notes": "Floor (helmsman 1.7.1 td-phase-lifecycle.cascade.js:2179-2189) matches nothing in the FOR-1689 scope or acceptance text. The page to source-id scheme and the single revision string are classified as a CONTRACT that L8's h1-corpus-identity door freezes at the seal, so the stated verdict is direct, matching plan:248 'direct-mode lanes'. Decision Q18 offers the door reading, under which L1 would run in arch mode. max_sentence_bytes is consumed from trunk (codec.py:22 = 4096 = the profile.py:242 cap), which removes the L1 x L2 parameter edge (grouping D12) without a channel. data/enwik8 must be pulled with dvc pull (R2 credentials in .env) before the 10 MB bounded capture; the lane brief owns that step. The new custody module is not in capture._READER_MODULES (capture.py:29, 7 members), so there is no source-reader re-pin. | DONE 2026-10-31: merged to main as #417 97c88599 (W1 stack #413..#417, released v0.10.0); triage loop 24 findings, 8 fix commits, 3 of 5 rounds."
-    },
-    {
-      "id": "h1-l2-pilot-generator",
-      "title": "L2 H1 pilot block generator in ladder/register/rungs and Q7 no-hidden-normalization teeth",
-      "issues": [
-        "FOR-1690"
-      ],
-      "branch": "h1-l2-pilot-generator",
-      "parent": "h1-l1-enwik8-documents",
-      "mode": "ratchet",
-      "engine_mode": "direct",
-      "gates": {
-        "liveRequired": false
-      },
-      "cost_class": "build",
-      "model_tier": "Sonnet xhigh (issue Seat)",
-      "contracts_owned": [
-        {
-          "name": "h1-pilot-generator",
-          "kind": "contract"
-        }
-      ],
-      "contracts_consumed": [
-        "h1-construction-digest",
-        "trunk:H1PreservationBlock + codec_sharing_groups (h_preservation.py:29-38,:80-83)",
-        "trunk:HProfile/RunSchedule (profile.py:84-100,:171-174,:269)",
-        "trunk:TransferLimits (worker_request.py:49-52)",
-        "trunk:CodecSpec.max_sentence_bytes default 4096 (codec.py:22; cap profile.py:242)"
-      ],
-      "touch_set": [
-        "src/entropic_substrate/ladder/register/rungs/h1_pilot.py",
-        "tests/test_h1_pilot_manifests.py",
-        "tests/test_h1_q7_magnitude_norms.py"
-      ],
-      "conflict_edges": [
-        {
-          "with": "h1-p0-design-identity",
-          "type": "contract",
-          "evidence": "consumes h1-construction-digest (plan:101-102)",
-          "resolution": "rails-before"
-        }
-      ],
-      "parallel_group": "h1-w1",
-      "status": "done",
-      "notes": "Floor matches nothing in the FOR-1690 text, and the phase owns no door, so the stated verdict is direct. The Q7 mutation targets core/sentence/codec.py, numerics.py and spine.py, which are reader members (checkpoint.py:72-126). Run them on a scratch copy or by monkeypatch inside the lane's own worktree, never as an in-tree edit. Reader identity is hashed from file bytes at runtime (checkpoint.py:129-140). Placed last in W1 as the largest hazard footprint (R-train). The issue already carries the 2026-10-28 retraction of the '~182 MB' figure; checkpoint bytes are issue-quoted (524,752,197 and 1,149,203,227) and were not re-derived here. | DONE 2026-10-31: merged to main as #415 e23595d0 (W1 stack #413..#417, released v0.10.0); triage loop 24 findings, 8 fix commits, 3 of 5 rounds."
-    },
-    {
-      "id": "h1-l4a-codec-handoff",
-      "title": "L4a warmed-codec hand-off through a hand-off seal (tracer slice; DG-A re-pin row 1)",
-      "issues": [
-        "FOR-1692"
-      ],
-      "branch": "h1-l4a-codec-handoff",
-      "parent": "main",
-      "mode": "tracer",
-      "engine_mode": "arch",
-      "gates": {
-        "liveRequired": true
-      },
-      "cost_class": "build",
-      "model_tier": "Opus xhigh (design gate and implementer, issue Seat); member edits land only as conductor DG-A commits",
-      "contracts_owned": [
-        {
-          "name": "h-codec-handoff-v1",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "h-codec-handoff-seal-v1",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "codec-handoff-defects",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "checkpoint-reader-54",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "h1-pair-predicate",
-          "kind": "contract",
-          "frozen_after": true
-        },
-        {
-          "name": "load-h-run-recipient-admission",
-          "kind": "contract"
-        }
-      ],
-      "contracts_consumed": [
-        "h1-exposure-rule",
-        "h1-exclusion-reasons",
-        "h1-observation-adapter",
-        "trunk:h-checkpoint-seal-v1 chain (seals.py:232-245,:297-336)",
-        "trunk:checkpoint binding and reader identity (checkpoint.py:129-165)"
-      ],
-      "touch_set": [
-        "src/entropic_substrate/ladder/run/seals.py",
-        "src/entropic_substrate/ladder/run/runner.py",
-        "src/entropic_substrate/ladder/run/execution.py",
-        "src/entropic_substrate/ladder/run/codec_handoff.py",
-        "src/entropic_substrate/ladder/run/checkpoint.py",
-        "src/entropic_substrate/ladder/run/trace_capture.py",
-        "src/entropic_substrate/ladder/analyze/h_aggregate.py",
-        "tests/test_h_codec_handoff.py",
-        "tests/test_sentence_seals.py",
-        "tests/test_identity_epoch.py",
-        "docs/identity/read-old-table.md"
-      ],
-      "conflict_edges": [
-        {
-          "with": "h1-p0-design-identity",
-          "type": "contract",
-          "evidence": "CodecHandoffDefect.independent_warmup must map to h1-exclusion-reasons; recipient exposure per h1-exposure-rule",
-          "resolution": "rails-before"
-        },
-        {
-          "with": "h1-l3-observations",
-          "type": "contract",
-          "evidence": "acceptance test feeds a hand-off recipient HRun through h1-observation-adapter (grouping lens D10; load_h_run D12 at h_aggregate.py:430-440)",
-          "resolution": "rails-before"
-        },
-        {
-          "with": "h1-l4b-pair-admission",
-          "type": "file",
-          "evidence": "runner.py, seals.py, trace_capture.py (_SCHEMAS :23-37), checkpoint.py, tests/test_identity_epoch.py, docs/identity/read-old-table.md",
-          "resolution": "hub-owner"
-        },
-        {
-          "with": "h1-l4c-remote-pair",
-          "type": "file",
-          "evidence": "tests/test_identity_epoch.py, docs/identity/read-old-table.md",
-          "resolution": "hub-owner"
-        }
-      ],
-      "parallel_group": null,
-      "status": "queued",
-      "notes": "trace_capture.py is a reader member (checkpoint.py:117) and is MISSING from the FOR-1692 member list. Its closed _SCHEMAS set (:23-37) refuses unknown schemas at :89. This slice must add h-codec-handoff-v1 and h-codec-handoff-seal-v1, or a pair lineage cannot be captured until L4c lands. The member set goes from 53 to 54, counted by AST over checkpoint.py:72-126. The issue's 'main's tuple has 51' is stale. Retract the 51/52 wording in read-old-table.md:260 and in the docstrings at tests/test_identity_epoch.py:183,:186,:218,:240 in the same conductor commit (house rule 4). Per the FOR-1692 text, codec_handoff must never import h_preservation; that keeps the member identity closed (grouping lens D4). liveRequired is true because the slice edits the run path. Base: main after W1 merges (decision Q6)."
-    },
-    {
-      "id": "h1-l4b-pair-admission",
-      "title": "L4b scientific pair admission: pair request wire, progress v2, cell namespace, pilot admission row, per-cell MLflow runs, corpus memo, result and completion v2, stop marker cell (DG-A re-pin row 2)",
-      "issues": [
-        "FOR-1693"
-      ],
-      "branch": "h1-l4b-pair-admission",
-      "parent": "h1-l4a-codec-handoff",
-      "mode": "ratchet",
-      "engine_mode": "arch",
-      "gates": {
-        "liveRequired": true
-      },
-      "cost_class": "build",
-      "model_tier": "Opus xhigh (issue Seat); DG-A conductor commits for members",
-      "contracts_owned": [
-        {
-          "name": "worker-request-pair-v3",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "training-progress-v2",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "worker-cell-namespace",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "admission-pilot-h1-row",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "mlflow-per-cell-runs",
-          "kind": "contract"
-        },
-        {
-          "name": "corpus-memo",
-          "kind": "contract"
-        },
-        {
-          "name": "pair-failure-isolation",
-          "kind": "contract",
-          "frozen_after": true
-        },
-        {
-          "name": "worker-result-v2",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "host-completion-v2",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "stop-marker-cell",
-          "kind": "door",
-          "frozen_after": true
-        }
-      ],
-      "contracts_consumed": [
-        "h-codec-handoff-v1",
-        "codec-handoff-defects",
-        "trunk:RunAuthority h-run-authority-v1 (run_authority.py:41,:127,:208)",
-        "trunk:admission port runtime kinds (admission.py:52-54,:96-97)",
-        "trunk:SealMemo digest-keyed memo (seals.py:58-83)",
-        "trunk:parse_probe_request exact-key recovery (worker_request.py:238-240)"
-      ],
-      "touch_set": [
-        "src/entropic_substrate/ladder/run/worker_request.py",
-        "src/entropic_substrate/ladder/run/worker_command.py",
-        "src/entropic_substrate/ladder/run/worker_execution.py",
-        "src/entropic_substrate/ladder/run/runner.py",
-        "src/entropic_substrate/ladder/run/journal.py",
-        "src/entropic_substrate/ladder/run/seals.py",
-        "src/entropic_substrate/ladder/run/admission.py",
-        "src/entropic_substrate/ladder/run/trace_capture.py",
-        "src/entropic_substrate/ladder/run/worker_snapshot.py",
-        "src/entropic_substrate/ladder/run/h_probe_collection.py",
-        "src/entropic_substrate/ladder/run/h_probe_resume.py",
-        "tests/test_h_worker_request_authority.py",
-        "tests/test_h_run_admission.py",
-        "tests/test_h_run_admission_sites.py",
-        "tests/test_h_probe_operator_stop.py",
-        "tests/test_identity_epoch.py",
-        "docs/identity/read-old-table.md",
-        "src/entropic_substrate/ladder/run/object_worker.py",
-        "src/entropic_substrate/ladder/run/worker_completion.py",
-        "src/entropic_substrate/ladder/run/worker/h_probe_stop.py",
-        "src/entropic_substrate/ladder/capture/reader/capture_results.py",
-        "tests/test_sentence_worker_completion.py",
-        "tests/test_h_probe_collection.py",
-        "tests/test_sentence_object_worker.py",
-        "tests/test_h_worker_command_observability.py",
-        "tests/test_capture_results.py",
-        "src/entropic_substrate/ladder/analyze/h_aggregate.py",
-        "src/entropic_substrate/ladder/capture/reader/h_telemetry.py",
-        "tests/test_h_aggregate.py",
-        "tests/test_h_telemetry.py",
-        "tests/test_h1_observations.py",
-        "src/entropic_substrate/core/sentence/sampling.py",
-        "src/entropic_substrate/ladder/run/codec_handoff.py",
-        "src/entropic_substrate/ladder/run/evaluation_records.py",
-        "src/entropic_substrate/ladder/run/execution.py",
-        "src/entropic_substrate/ladder/run/generation.py",
-        "src/entropic_substrate/ladder/run/native_verification.py",
-        "src/entropic_substrate/ladder/run/span_diagnostics.py",
-        "src/entropic_substrate/ladder/run/span_states.py",
-        "src/entropic_substrate/ladder/run/worker_transport.py",
-        "src/entropic_substrate/ladder/run/h_probe_launch.py",
-        "scripts/h0_final_probe_checks.py",
-        "tests/test_h_pair_request.py",
-        "tests/test_h_pair_request_pins.py",
-        "tests/test_h_codec_handoff.py"
-      ],
-      "conflict_edges": [
-        {
-          "with": "h1-l4a-codec-handoff",
-          "type": "contract",
-          "evidence": "progress v2 carries the hand-off reference (h-codec-handoff-v1); own vs inherited warm-up steps",
-          "resolution": "rails-before"
-        },
-        {
-          "with": "h1-l4a-codec-handoff",
-          "type": "file",
-          "evidence": "runner.py, seals.py (:342 caller, SealMemo :58-83), trace_capture.py, tests/test_identity_epoch.py, docs/identity/read-old-table.md",
-          "resolution": "serial-after"
-        },
-        {
-          "with": "h1-l4c-remote-pair",
-          "type": "file",
-          "evidence": "worker_command.py, worker_execution.py, worker_snapshot.py, h_probe_collection.py (:132,:172,:196-200), h_probe_resume.py (:95,:109), tests/test_identity_epoch.py; DH-44 (2026-11-01): worker-result-v2, host-completion-v2 and stop-marker-cell moved to L4b, so object_worker.py, worker_completion.py, worker/h_probe_stop.py and capture_results.py are L4b's here",
-          "resolution": "hub-owner"
-        }
-      ],
-      "parallel_group": null,
-      "status": "queued",
-      "notes": "The wire name v2 is TAKEN: worker_request.py:33-34 defines REQUEST_SCHEMA_V2 = 'h-probe-worker-request-v2', which is v1 plus a sealed authority (#407). The contract name worker-request-pair-v3 assumes decision Q7(a). Verify-and-close at lane start: checkpoint tuple += run_authority is already done (checkpoint.py:66-71, 53 members); tiny=True is stale, because worker_command.py:221 reads tiny=request.authority is None; pilot without authority is already refused (worker_request.py:78-79; tests/test_h_run_admission.py:104-127). worker_snapshot._path (:36-48) is moved INTO this slice so one slice owns the whole flat-namespace change (grouping lens D7; decision Q9). The non-member progress readers h_probe_collection.py and h_probe_resume.py land in the SAME DG-A commit as runner.py (grouping lens D5). D13 failure isolation is an operator ruling at the design gate (plan:146-148)."
-    },
-    {
-      "id": "h1-l4c-remote-pair",
-      "title": "L4c carry a pair through the remote path: launch v5 with the sealed ceiling, capture by reference, pair collection v2 and per-cell resume, wave-monitor cell arms, host pair verifier (DG-A re-pin row 3)",
-      "issues": [
-        "FOR-1694"
-      ],
-      "branch": "h1-l4c-remote-pair",
-      "parent": "h1-l4b-pair-admission",
-      "mode": "ratchet",
-      "engine_mode": "arch",
-      "gates": {
-        "liveRequired": true
-      },
-      "cost_class": "build",
-      "model_tier": "Opus xhigh (issue Seat); DG-A conductor commits for members",
-      "contracts_owned": [
-        {
-          "name": "probe-launch-v5",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "wave-monitor-cell-arms",
-          "kind": "contract"
-        },
-        {
-          "name": "pair-collection-resume",
-          "kind": "contract"
-        },
-        {
-          "name": "capture-reference-transport",
-          "kind": "contract"
-        },
-        {
-          "name": "deploy-launch-schema-doc",
-          "kind": "contract"
-        },
-        {
-          "name": "terminal-collection-v2",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "pair-resume-on-v3",
-          "kind": "contract"
-        }
-      ],
-      "contracts_consumed": [
-        "worker-result-v2",
-        "host-completion-v2",
-        "stop-marker-cell",
-        "worker-request-pair-v3",
-        "training-progress-v2",
-        "worker-cell-namespace",
-        "pair-failure-isolation",
-        "h-codec-handoff-v1",
-        "trunk:pod_name rule (h_probe_launch.py:329-333)",
-        "trunk:validate_template whole-environment check (h_probe_launch.py:340-394)",
-        "trunk:h-probe-controller-result-v1 (worker/h_probe_controller.py:604-623)"
-      ],
-      "touch_set": [
-        "src/entropic_substrate/ladder/run/worker_log_events.py",
-        "src/entropic_substrate/ladder/run/worker_snapshot.py",
-        "src/entropic_substrate/ladder/run/worker_transport.py",
-        "src/entropic_substrate/ladder/run/object_worker.py",
-        "src/entropic_substrate/ladder/run/worker_execution.py",
-        "src/entropic_substrate/ladder/run/worker_command.py",
-        "src/entropic_substrate/ladder/run/worker_request.py",
-        "src/entropic_substrate/ladder/run/transport/d1_trainer_s3_object_adapter.py",
-        "src/entropic_substrate/ladder/run/h_probe_launch.py",
-        "src/entropic_substrate/ladder/run/worker/h_probe_command.py",
-        "src/entropic_substrate/ladder/run/worker/h_probe_stop.py",
-        "src/entropic_substrate/ladder/run/h_probe_collection.py",
-        "src/entropic_substrate/ladder/run/h_probe_resume.py",
-        "src/entropic_substrate/ladder/run/h_probe_events.py",
-        "src/entropic_substrate/ladder/run/host_pair_verifier.py",
-        "src/entropic_substrate/composition/entrypoints/h_wave_monitor.py",
-        "src/entropic_substrate/ladder/run/worker/h_probe_controller.py",
-        "src/entropic_substrate/ladder/analyze/h_resumed_run.py",
-        "src/entropic_substrate/ladder/analyze/h_final_probe_checks.py",
-        "scripts/h0_final_probe_checks.py",
-        "docs/identity/read-old-table.md",
-        "docs/deploy-h100.md",
-        "tests/test_h_pair_remote.py",
-        "tests/test_h_pair_remote_dga.py",
-        "tests/test_h_pair_events.py",
-        "tests/test_h_host_pair_verifier.py",
-        "tests/test_d1_trainer_s3_multipart.py",
-        "tests/test_h_resumed_run_handoff.py",
-        "tests/test_h_wave_monitor.py",
-        "tests/test_h_probe_launch.py",
-        "tests/test_h_probe_command.py",
-        "tests/test_h_probe_controller.py",
-        "tests/test_h_probe_operator_stop.py",
-        "tests/test_h_probe_log_events.py",
-        "tests/test_h_pair_request.py",
-        "tests/test_h_pair_request_pins.py",
-        "tests/test_h_run_admission_sites.py",
-        "tests/test_identity_epoch.py"
-      ],
-      "conflict_edges": [
-        {
-          "with": "h1-l4b-pair-admission",
-          "type": "contract",
-          "evidence": "consumes worker-request-pair-v3, training-progress-v2, worker-cell-namespace, pair-failure-isolation, worker-result-v2, host-completion-v2, stop-marker-cell (DH-44)",
-          "resolution": "rails-before"
-        },
-        {
-          "with": "h1-l4b-pair-admission",
-          "type": "file",
-          "evidence": "worker_command.py, worker_execution.py, worker_snapshot.py, worker_request.py, h_probe_collection.py, h_probe_resume.py, tests/test_identity_epoch.py, tests/test_h_pair_request.py, tests/test_h_pair_request_pins.py, tests/test_h_run_admission_sites.py",
-          "resolution": "serial-after"
-        },
-        {
-          "with": "h1-l4a-codec-handoff",
-          "type": "file",
-          "evidence": "tests/test_identity_epoch.py, docs/identity/read-old-table.md",
-          "resolution": "serial-after"
-        },
-        {
-          "with": "h1-l9-image-repin",
-          "type": "file",
-          "evidence": "docs/deploy-h100.md: L4c owns the LAUNCH SCHEMA section :168-200 (FOR-1694 Handoff); L9 adds the pin paragraph above :12-28",
-          "resolution": "hub-owner"
-        }
-      ],
-      "parallel_group": null,
-      "status": "queued",
-      "notes": "Done on trunk, so verify-and-close: the D8 pod-name rule (h_probe_launch.py:329-333; listing filter h_runpod_transport.py:259) and the existing LAUNCH_SCHEMA_V4 'h-probe-launch-v4' (h_probe_launch.py:68). Hence the contract name probe-launch-v5 under decision Q8(a). Two members missing from the issue list are added: worker_execution.py (result-v1 writer :225) and worker_command.py (:224). Also added is the non-member d1_trainer_s3_object_adapter.py, which does a single PUT (publish at :268, no multipart) and is not in checkpoint.py _READER_MODULES. h_wave_monitor is owned HERE, not by FOR-1695 (grouping lens D8; W3 frozen-file rule plan:97-100). New publication counts live only in completion v2 (decision Q11). Controller, watchdog and h_probe_process stay OUT unless the operator rules decision Q10(b); the issue says 'any controller or watchdog change' is out of scope. docs/deploy-h100.md: this phase edits only the LAUNCH SCHEMA section (:168-200); L9 owns the pin paragraph. DH-44 (2026-11-01, pull-forward): worker-result-v2, host-completion-v2 and stop-marker-cell are L4b's doors; L4c consumes them and keeps launch v5, the pod name, capture-by-reference, pair collection and resume, the wave-monitor cell arms and the deploy-doc launch schema."
-    },
-    {
-      "id": "h1-l4d-evaluation-instruments",
-      "title": "L4d evaluation instruments: prior and mixture proposals beside the q proposal with their own ESS keys, ratio-of-sums per-byte headline, prior/q log-radius and cosine, latent-usage per evaluation, through the extractor to the MLflow sink and telemetry (DG-A re-pin row 4)",
-      "issues": [
-        "FOR-1704",
-        "FOR-1716"
-      ],
-      "branch": "h1-l4d-evaluation-instruments",
-      "parent": "h1-l4c-remote-pair",
-      "mode": "ratchet",
-      "engine_mode": "arch",
-      "gates": {
-        "liveRequired": true
-      },
-      "cost_class": "build",
-      "model_tier": "Opus xhigh (design gate and implementer); DG-A conductor commits for members",
-      "contracts_owned": [
-        {
-          "name": "h-evaluation-record-proposals-v2",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "eval-metric-keys-prior-mixture-latent-usage",
-          "kind": "contract"
-        },
-        {
-          "name": "elm-projection-proposal-selector-and-ratio-of-sums",
-          "kind": "contract"
-        }
-      ],
-      "contracts_consumed": [
-        "trunk:MetricSink port (ladder/capture/ports/metric_sink.py) and the mlflow_strict exact-record rule",
-        "trunk:HTrainingStepExtractor wiring (ladder/run/worker_command.py)",
-        "trunk:L3 gate metric key as a parameter (ladder/analyze/h1_observations.py, merged #416)",
-        "worker-cell-namespace",
-        "training-progress-v2",
-        "h-codec-handoff-v1"
-      ],
-      "touch_set": [
-        "src/entropic_substrate/core/sentence/scoring.py",
-        "src/entropic_substrate/ladder/run/execution.py",
-        "src/entropic_substrate/ladder/run/trace_capture.py",
-        "src/entropic_substrate/ladder/run/h_metric_extractor.py",
-        "src/entropic_substrate/ladder/analyze/h_elm_projection.py",
-        "src/entropic_substrate/ladder/capture/adapters/mlflow.py",
-        "tests/test_sentence_scoring.py",
-        "tests/test_h_elm_projection.py",
-        "tests/test_mlflow_async_sink.py",
-        "tests/test_identity_epoch.py",
-        "docs/identity/read-old-table.md",
-        "tests/test_h_metric_routing.py",
-        "src/entropic_substrate/ladder/analyze/h_aggregate.py",
-        "tests/test_h_pair_request.py"
-      ],
-      "conflict_edges": [
-        {
-          "with": "h1-l4c-remote-pair",
-          "type": "file",
-          "evidence": "tests/test_identity_epoch.py, docs/identity/read-old-table.md",
-          "resolution": "serial-after"
-        },
-        {
-          "with": "h1-l4b-pair-admission",
-          "type": "contract",
-          "evidence": "consumes worker-cell-namespace and training-progress-v2 (per-cell MLflow runs carry the new keys)",
-          "resolution": "rails-before"
-        },
-        {
-          "with": "h1-l4a-codec-handoff",
-          "type": "file",
-          "evidence": "execution.py, trace_capture.py (_SCHEMAS), tests/test_identity_epoch.py",
-          "resolution": "serial-after"
-        }
-      ],
-      "status": "queued",
-      "notes": "Added 2026-10-31 at the W1 boundary under DH-32 and DH-33 (operator, 2026-10-28; FOR-1704 filed then) as the fourth serial W2 slice. Consumer: DH-34's two confirming quote pods after W2 merges and an interim re-pin read the new keys from the captured records alone. Anchors re-measured at main e3d1524b (v0.10.0) by the conductor's read-only lane before the brief was written; the q rows stay byte-identical in shape so every existing reader keeps its names. The dev-width non_checkpoint_bytes allowance that L2's pilot_transfer_limits now requires (#415) is measured on the same DH-34 pods before L8 seals the limits. Amended 2026-11-03 at the L4c boundary under DH-48 (operator 2026-11-02): FOR-1716 joins as this lane's sub-issue; load_h_run admits a null future_nll_per_dimension on a prediction row only under the recorded optimization.future_weight == 0 (h_aggregate.py, non-member; the P5-15 pin in tests/test_h_pair_request.py flips to load-through in the same commit).",
-      "brief": ".claude/workflows/briefs/h1-l4d-evaluation-instruments.md"
-    },
-    {
-      "id": "h1-l4e-segmenter-alignment",
-      "title": "L4e align pysbd sentence spans sequentially from the cursor in segment_document, keeping every enwik8 page; segmentation identity bump with golden replay on every fixture (DG-A re-pin row 5)",
-      "issues": [
-        "FOR-1706"
-      ],
-      "branch": "h1-l4e-segmenter-alignment",
-      "parent": "h1-l4d-evaluation-instruments",
-      "mode": "ratchet",
-      "engine_mode": "arch",
-      "gates": {
-        "liveRequired": true
-      },
-      "cost_class": "build",
-      "model_tier": "Opus xhigh (design gate and implementer); DG-A conductor commits for members",
-      "contracts_owned": [
-        {
-          "name": "segmentation-identity-v2",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "source-reader-identity-after-l4e",
-          "kind": "contract"
-        }
-      ],
-      "contracts_consumed": [
-        "trunk:segment_document fail-loud invariant (core/sentence/segmentation.py:118-121: monotone, non-overlapping, text-identical spans)",
-        "trunk:source reader identity (ladder/capture/capture.py, pysbd plus the member files)",
-        "trunk:enwik8 document adapter and capture script (W1 L1, merged #417; three measurements exhausted-pending until this slice)"
-      ],
-      "touch_set": [
-        "src/entropic_substrate/core/sentence/segmentation.py",
-        "tests/test_sentence_segmentation.py",
-        "tests/test_sentence_sampling.py",
-        "tests/test_enwik8_documents.py",
-        "tests/test_identity_epoch.py",
-        "docs/identity/read-old-table.md"
-      ],
-      "conflict_edges": [
-        {
-          "with": "h1-l4d-evaluation-instruments",
-          "type": "file",
-          "evidence": "tests/test_identity_epoch.py, docs/identity/read-old-table.md (identity re-pin rows)",
-          "resolution": "serial-after"
-        },
-        {
-          "with": "h1-l4a-codec-handoff",
-          "type": "file",
-          "evidence": "tests/test_identity_epoch.py, docs/identity/read-old-table.md",
-          "resolution": "serial-after"
-        }
-      ],
-      "status": "queued",
-      "notes": "Added 2026-10-31 at the W1 boundary under DH-35 (operator, 2026-10-28: the fix, explicitly NOT an exclusion; FOR-1706 filed then) as the fifth and last serial W2 slice. It moves the segmentation identity and therefore the source reader identity, so the W4 enwik8 capture stays after it. Golden replay: every existing prepared-corpus fixture re-segments byte-identically under the new alignment. Anchors re-measured at main e3d1524b (v0.10.0) before the brief was written. Correction carried from the anchor lane: segment_document lives in core/sentence/segmentation.py (not corpus.py); both files are members of both readers, so the fix moves five checkpoint rows and four source rows.",
-      "brief": ".claude/workflows/briefs/h1-l4e-segmenter-alignment.md"
-    },
-    {
-      "id": "h1-l7-sensitivity",
-      "title": "L7 sensitivity-map reporter in ladder/analyze (non-deciding alternatives, admitted-block counts per reading)",
-      "issues": [
-        "FOR-1697"
-      ],
-      "branch": "h1-l7-sensitivity",
-      "parent": "main",
-      "mode": "ratchet",
-      "engine_mode": "direct",
-      "gates": {
-        "liveRequired": false
-      },
-      "cost_class": "build",
-      "model_tier": "Sonnet xhigh (issue Seat)",
-      "contracts_owned": [
-        {
-          "name": "h1-sensitivity-report",
-          "kind": "contract"
-        }
-      ],
-      "contracts_consumed": [
-        "h1-observation-adapter",
-        "trunk:dual_confidence_intervals (seed_sizing.py:251)",
-        "trunk:eval/ess_ratio_median_k8 and eval/ess_ratio_median_k64 (h_elm_projection.py:200)"
-      ],
-      "touch_set": [
-        "src/entropic_substrate/ladder/analyze/h1_sensitivity.py",
-        "tests/test_h1_sensitivity.py",
-        "scripts/h1_sensitivity.py"
-      ],
-      "conflict_edges": [
-        {
-          "with": "h1-l3-observations",
-          "type": "contract",
-          "evidence": "consumes per-threshold PilotContrasts from h1-observation-adapter (absent on trunk; seed_sizing.py:29 is the singular dataclass)",
-          "resolution": "rails-before"
-        }
-      ],
-      "parallel_group": "h1-w3",
-      "status": "queued",
-      "notes": "Floor matches nothing in the FOR-1697 text, and the phase owns no door, so the stated verdict is direct. The phase stays in W3 as the plan of record places it (plan:90, grouping lens D2). The assembly's proposed move to W1 is rejected: it breaks fanout edge-disjointness with L3. Must not be appended to any reader tuple (checkpoint.py:72-126; capture.py:29)."
-    },
-    {
-      "id": "h1-l6-block-cost",
-      "title": "L6 per-block cost reader in ladder/analyze (observed price x watchdog elapsed, per-cell wall/CUDA seconds, evidence class per row)",
-      "issues": [
-        "FOR-1696"
-      ],
-      "branch": "h1-l6-block-cost",
-      "parent": "h1-l7-sensitivity",
-      "mode": "ratchet",
-      "engine_mode": "direct",
-      "gates": {
-        "liveRequired": false
-      },
-      "cost_class": "build",
-      "model_tier": "Sonnet xhigh (issue Seat)",
-      "contracts_owned": [
-        {
-          "name": "h1-block-cost-report",
-          "kind": "contract"
-        }
-      ],
-      "contracts_consumed": [
-        "h-codec-handoff-v1",
-        "pair-collection-resume",
-        "trunk:h-probe-controller-result-v1 with nested watchdog elapsed (worker/h_probe_controller.py:604-623; h_probe_watchdog.py:332)",
-        "trunk:ProbePod.cost_per_hour float|None (h_runpod_transport.py:42-50)",
-        "trunk:journal step wall/CUDA seconds (execution.py:288-302)",
-        "trunk:eval/wall_seconds and eval/cuda_seconds (h_metric_extractor.py:199-202)"
-      ],
-      "touch_set": [
-        "src/entropic_substrate/ladder/analyze/h1_block_cost.py",
-        "tests/test_h1_block_cost.py",
-        "scripts/h1_block_cost.py"
-      ],
-      "conflict_edges": [
-        {
-          "with": "h1-l4a-codec-handoff",
-          "type": "contract",
-          "evidence": "recipient's inherited warm-up counted once on the donor, read from h-codec-handoff-v1",
-          "resolution": "rails-before"
-        },
-        {
-          "with": "h1-l4c-remote-pair",
-          "type": "contract",
-          "evidence": "per-pod controller results and pair collection layout (pair-collection-resume)",
-          "resolution": "rails-before"
-        }
-      ],
-      "parallel_group": "h1-w3",
-      "status": "queued",
-      "notes": "Floor matches nothing in the FOR-1696 text, and the phase owns no door, so the stated verdict is direct. This is a measurement path and must fail LOUD: a missing record raises. FIXTURE CUSTODY is unresolved: results/h1-dev-quote-v1..v4 are gitignored (.gitignore:51), untracked, and 7.4G for v4 (du). Decision Q16 must be ruled before W3 fans out. The controller record hard-codes scientific_authority 'none' (h_probe_controller.py:606), so authority must never be keyed off that field."
-    },
-    {
-      "id": "h1-l5-block-launch",
-      "title": "L5 block launch manifest + two-pod driver (pod A MM then MS, pod B SM then SS; teardown before collection on a verified snapshot)",
-      "issues": [
-        "FOR-1695"
-      ],
-      "branch": "h1-l5-block-launch",
-      "parent": "h1-l6-block-cost",
-      "mode": "ratchet",
-      "engine_mode": "arch",
-      "gates": {
-        "liveRequired": false
-      },
-      "cost_class": "build",
-      "model_tier": "Opus xhigh (issue Seat)",
-      "contracts_owned": [
-        {
-          "name": "h1-block-launch-manifest",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "h1-block-driver",
-          "kind": "contract"
-        }
-      ],
-      "contracts_consumed": [
-        "worker-request-pair-v3",
-        "probe-launch-v5",
-        "wave-monitor-cell-arms",
-        "trunk:H1PreservationBlock.codec_sharing_groups read-only (h_preservation.py:80-83)",
-        "trunk:read_campaign_design roster/pairing pattern (ladder_campaign.py:192-266)",
-        "trunk:h_probe_command subprocess target (ladder/run/worker/h_probe_command.py)",
-        "trunk:RunAuthority spend_cap + per-launch guard (h_probe_launch.py:299-318)"
-      ],
-      "touch_set": [
-        "src/entropic_substrate/ladder/run/h_block_launch.py",
-        "scripts/h1_launch_block.py",
-        "tests/test_h_block_launch.py"
-      ],
-      "conflict_edges": [
-        {
-          "with": "h1-l4b-pair-admission",
-          "type": "contract",
-          "evidence": "block manifest binds two pair requests (worker-request-pair-v3)",
-          "resolution": "rails-before"
-        },
-        {
-          "with": "h1-l4c-remote-pair",
-          "type": "contract",
-          "evidence": "two launches with the sealed price ceiling (probe-launch-v5); per-(request, cell) monitor arms (wave-monitor-cell-arms)",
-          "resolution": "rails-before"
-        }
-      ],
-      "parallel_group": "h1-w3",
-      "status": "queued",
-      "notes": "This phase owns a door, the block manifest schema, so it runs in arch mode. Narrowed from the FOR-1695 text in two ways. (1) composition/entrypoints/h_wave_monitor.py and its test are REMOVED; L4c owns them, and W3 is frozen on composition/entrypoints/* (plan:97-100). (2) h_preservation.py is NOT edited; pod assignment lives in h_block_launch.py and reads codec_sharing_groups read-only (grouping lens D4; keeps the h1-preservation-block-v1 bytes stable). The spend-share semantics are open (decision Q15): h_probe_launch.py:316 checks each pod against the FULL cap. Placed last in W3 as the most disruptive phase (R-train)."
-    },
-    {
-      "id": "h1-l8-registration",
-      "title": "L8 seal the H1 registration: enwik8 capture in the image regime, docs/h1/preregistration.md, pilot manifests, CLAUDE.md horizon corpus ladder",
-      "issues": [
-        "FOR-1698"
-      ],
-      "branch": "h1-l8-registration",
-      "parent": "main",
-      "mode": "ratchet",
-      "engine_mode": "arch",
-      "gates": {
-        "liveRequired": true
-      },
-      "cost_class": "build",
-      "model_tier": "conductor + operator (docs lane; Fable at high for drafting, issue Seat)",
-      "contracts_owned": [
-        {
-          "name": "h1-registration",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "h1-corpus-identity",
-          "kind": "door",
-          "frozen_after": true
-        },
-        {
-          "name": "h1-pilot-manifests",
-          "kind": "contract",
-          "frozen_after": true
-        },
-        {
-          "name": "horizon-corpus-ladder",
-          "kind": "contract"
-        }
-      ],
-      "contracts_consumed": [
-        "enwik8-source-scheme",
-        "enwik8-prepare-script",
-        "h1-pilot-generator",
-        "h1-construction-digest",
-        "h1-exclusion-reasons",
-        "h1-pair-predicate",
-        "codec-handoff-defects",
-        "trunk:preregistration skeleton (docs/h1/preregistration-skeleton.md)",
-        "trunk:SOURCE_PREFIXES runtime identity (ladder/run/worker/hardware.py:24-31)"
-      ],
-      "touch_set": [
-        "docs/h1/preregistration.md",
-        "CLAUDE.md",
-        "docs/hierarchical-latent-predictor.plan.md",
-        "docs/architecture.md",
-        "PROGRESS.md",
-        "results/h1-corpus-<identity>.dvc",
-        "configs/h1-pilot/*"
-      ],
-      "conflict_edges": [
-        {
-          "with": "h1-l1-enwik8-documents",
-          "type": "contract",
-          "evidence": "capture via scripts/prepare_enwik8_source.py (enwik8-prepare-script, enwik8-source-scheme)",
-          "resolution": "rails-before"
-        },
-        {
-          "with": "h1-l2-pilot-generator",
-          "type": "contract",
-          "evidence": "pilot manifests from h1-pilot-generator with the real capture digest",
-          "resolution": "rails-before"
-        },
-        {
-          "with": "h1-l4a-codec-handoff",
-          "type": "contract",
-          "evidence": "section 7 pair rule (h1-pair-predicate) and independent_warmup (codec-handoff-defects)",
-          "resolution": "rails-before"
-        },
-        {
-          "with": "h1-l10-pilot-launch",
-          "type": "file",
-          "evidence": "docs/h1/preregistration.md: L8 creates, L10 amends",
-          "resolution": "hub-owner"
-        }
-      ],
-      "parallel_group": null,
-      "status": "queued",
-      "notes": "Owns the registration and corpus-identity doors, so it runs in arch mode; the design gate is the operator interview on values. The FOR-1698 text cites figures that must be cited to an artifact before quoting: '0.2153 s/step' and '1,970 s' are absent from the repo text (FOR-1698 probe); the repo figure is 0.0545 s/step, codec warm-up only, plan:27. W4 is not under the W1/W3 frozen-file rule, so this phase records the seven new modules in docs/architecture.md and PROGRESS.md (completeness lens GAP 11) unless decision Q24 routes that to the per-wave docs sweep. If pilot manifests land under configs/, they enter SOURCE_PREFIXES (hardware.py:24-31) and must precede L9. The capture runs after the code freeze, in the image regime (plan:202-205)."
-    },
-    {
-      "id": "h1-l9-image-repin",
-      "title": "L9 rebuild and re-pin the H image from the L8 release tag (eight-key scientific template, deploy-doc pin, DVC publication capture)",
-      "issues": [
-        "FOR-1699"
-      ],
-      "branch": "h1-l9-image-repin",
-      "parent": "main",
-      "mode": "ratchet",
-      "engine_mode": "direct",
-      "gates": {
-        "liveRequired": true
-      },
-      "cost_class": "build",
-      "model_tier": "conductor ceremony (repin kit, issue Seat); not launched through a lifecycle engine",
-      "contracts_owned": [
-        {
-          "name": "h-image-pin-h1",
-          "kind": "contract",
-          "frozen_after": true
-        },
-        {
-          "name": "scientific-template-8key",
-          "kind": "contract",
-          "frozen_after": true
-        }
-      ],
-      "contracts_consumed": [
-        "h1-registration",
-        "h1-corpus-identity",
-        "deploy-launch-schema-doc",
-        "trunk:validate_template whole-environment rule (h_probe_launch.py:340-394; called h_runpod_transport.py:176)",
-        "trunk:SOURCE_PREFIXES exact_git_tree_match (ladder/run/worker/hardware.py:24-31)"
-      ],
-      "touch_set": [
-        "docs/deploy-h100.md",
-        "results/h-image-publication-<short>.dvc"
-      ],
-      "conflict_edges": [
-        {
-          "with": "h1-l8-registration",
-          "type": "contract",
-          "evidence": "rebuild from the release tag carrying L8; source_replay of the sealed h1-corpus-identity",
-          "resolution": "rails-before"
-        },
-        {
-          "with": "h1-l4c-remote-pair",
-          "type": "file",
-          "evidence": "docs/deploy-h100.md: L4c edits the LAUNCH SCHEMA section :168-200, L9 edits the pin paragraph :12-28 and :150",
-          "resolution": "serial-after"
-        }
-      ],
-      "parallel_group": null,
-      "status": "queued",
-      "notes": "Floor matches nothing in the FOR-1699 text, and the phase owns no door, so the stated verdict is direct. The eight-key template rule is already enforced in code (h_probe_launch.py:340-394); this phase creates the instance. The '900 s' stage bound is LOCATED outside the repo, at `timeout 900` in Containerfile.verify:5 of the repin-v0.8.0 kit. The same kit's prepare-source.json caps max_artifact_bytes at 64 MiB; both must be resized for a full-enwik8 replay, and L1 measures the inputs. Nothing under src/, configs/, scripts/, pyproject.toml, uv.lock or .dvc/config may land after this phase (FOR-1699 constraint). Excluded from the draft launch queue as a conductor ceremony."
-    },
-    {
-      "id": "h1-l10-pilot-launch",
-      "title": "L10 launch the H1 pilot wave: sealed RunAuthority, 8 blocks x 2 pods under the $60 cap, captures, checks, plan_seed_count, amendment",
-      "issues": [
-        "FOR-1700"
-      ],
-      "branch": "h1-l10-pilot-launch",
-      "parent": "main",
-      "mode": "tracer",
-      "engine_mode": "direct",
-      "gates": {
-        "liveRequired": false,
-        "liveDeferred": "Not a code PR; the live surface is the real pod wave under operator GO (balance said aloud), monitored by the conductor per the H-probe wave runbook; no container-test applies to the authority, DVC and amendment commits"
-      },
-      "cost_class": "build",
-      "model_tier": "conductor (launch and monitoring) + fresh analysis session (DVC captures only) + operator (GO, authority commit, top-up); NOT launched through a lifecycle engine",
-      "contracts_owned": [
-        {
-          "name": "h1-pilot-authority",
-          "kind": "contract",
-          "frozen_after": true
-        },
-        {
-          "name": "h1-pilot-captures",
-          "kind": "contract",
-          "frozen_after": true
-        },
-        {
-          "name": "h1-registration-amendment",
-          "kind": "contract"
-        }
-      ],
-      "contracts_consumed": [
-        "h1-registration",
-        "h1-pilot-manifests",
-        "h-image-pin-h1",
-        "scientific-template-8key",
-        "h1-block-launch-manifest",
-        "h1-block-driver",
-        "h1-block-cost-report",
-        "h1-sensitivity-report",
-        "h1-observation-adapter",
-        "trunk:RunAuthority seal is an integrity digest, not a signature (run_authority.py:19-20,:208)"
-      ],
-      "touch_set": [
-        "results/h1-pilot-<nonce>.dvc",
-        "docs/h1/preregistration.md"
-      ],
-      "conflict_edges": [
-        {
-          "with": "h1-l8-registration",
-          "type": "file",
-          "evidence": "docs/h1/preregistration.md amendment after L8 creates it",
-          "resolution": "serial-after"
-        },
-        {
-          "with": "h1-l9-image-repin",
-          "type": "contract",
-          "evidence": "image pin + eight-key template must match the launch preflight doc-pin and template checks",
-          "resolution": "rails-before"
-        },
-        {
-          "with": "h1-l5-block-launch",
-          "type": "contract",
-          "evidence": "scripts/h1_launch_block.py and the block manifest",
-          "resolution": "rails-before"
-        }
-      ],
-      "parallel_group": null,
-      "status": "holding",
-      "notes": "HOLDING until the operator GO with the balance said aloud (FOR-1700 Class: SPEND). Floor matches nothing in the FOR-1700 text, and the phase owns no door, so the stated verdict is direct. It is stated only because the brief requires engine_mode; this phase is an operator-gated spend runbook. Reframes: 'signed' means a sealed integrity digest (run_authority.py:19-20); scripts/h1_launch_block.py comes from L5, so L10 makes no source edit; preflight.sh is absent from the repo, so it must be an out-of-repo kit file (decision Q21) because nothing under scripts/ may land after L9. The authority file path is TBD (operator commit; registration_sha = the L8 commit). needs-recon before GO: the RunPod balance and A100 SXM stock at launch, and the ESS degeneracy (decision Q4). The $60 arithmetic ($3.75/pod, ~2.1 h/pod) is an ESTIMATE from plan:25 pricing, not measured."
-    }
+    "prelaunch",
+    "M0",
+    "M1",
+    "M2",
+    "M3",
+    "M4",
+    "M5",
+    "M6",
+    "M7",
+    "M8",
+    "M9",
+    "M10",
+    "M11",
+    "M12",
+    "MF"
   ],
   "lifecycle": "active",
-  "ledger": ".claude/workflows/launch-queue.jsonl"
+  "ledger": ".claude/workflows/launch-queue.jsonl",
+  "phases": [
+    {
+      "id": "prelaunch",
+      "title": "Prelaunch: land rung-seven plan of record, rotate H1 manifest, add this manifest",
+      "issues": [
+        "FOR-1728"
+      ],
+      "branch": "docs/plan/platform-refactor-rung-seven",
+      "parent": "refactor/platform-topology",
+      "mode": "ratchet",
+      "engine_mode": "direct",
+      "gates": {
+        "liveRequired": false
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "plan-of-record-rung-seven",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "sprint-manifest-platform-refactor",
+          "kind": "contract",
+          "frozen_after": false
+        },
+        {
+          "name": "h1-groundwork-manifest-rotated",
+          "kind": "contract",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "trunk:epoch-pre-platform-refactor tag 0edde818 -> 5f6b6dd9 (on origin)",
+        "trunk:sprint-manifest.schema.json"
+      ],
+      "touch_set": [
+        "docs/plans/series-plugin-topology.plan.md",
+        "docs/reviews/2026-11-27-platform-refactor-source-review.md",
+        "docs/h1/shelved-state-2026-11-27.md",
+        ".claude/workflows/sprint-manifest.json",
+        ".claude/workflows/sprint-manifest.h1-groundwork.json",
+        ".secrets.baseline",
+        "docs/plans/measurements/platform-refactor-preflight-2026-11-27.md",
+        "docs/plans/measurements/platform-refactor-preflight-lens-gaps-2026-11-27.md"
+      ],
+      "conflict_edges": [
+        {
+          "with": "M0",
+          "type": "contract",
+          "evidence": "plan-of-record-rung-seven: plan.md:466-689 exists only at a50ea2a8, 1 commit above trunk 5f6b6dd9",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "active",
+      "notes": "Conductor-only, never launched. Resolves the consumed-before-owned HALT (Q2). a50ea2a8 carries the plan; the rotation commit on the same branch carries both manifests and the preflight notes. Umbrella issue FOR-1728 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    },
+    {
+      "id": "M0",
+      "title": "M0 flush, freeze, charter",
+      "issues": [
+        "FOR-1729"
+      ],
+      "branch": "refactor/charter/m0-flush-freeze-charter",
+      "parent": "refactor/platform-topology",
+      "mode": "ratchet",
+      "engine_mode": "direct",
+      "gates": {
+        "liveRequired": false
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "freeze-predicate",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "initiative-charter",
+          "kind": "contract",
+          "frozen_after": false
+        },
+        {
+          "name": "platform-member-charter-draft",
+          "kind": "contract",
+          "frozen_after": false
+        },
+        {
+          "name": "debt-ledger",
+          "kind": "contract",
+          "frozen_after": false
+        },
+        {
+          "name": "ref-classification",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "replay-recipe",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "replay-corpus-enumeration",
+          "kind": "contract",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "prelaunch:plan-of-record-rung-seven",
+        "prelaunch:h1-groundwork-manifest-rotated",
+        "trunk:epoch-pre-platform-refactor tag 0edde818 -> 5f6b6dd9 (on origin)"
+      ],
+      "touch_set": [
+        "CLAUDE.md",
+        "tests/repo/test_freeze_predicate.py",
+        "docs/plans/platform-refactor-debt-ledger.md",
+        "docs/identity/replay-recipe.md",
+        "docs/platform/charter-draft.md",
+        "docs/h1/ref-classification-2026-11-27.md"
+      ],
+      "conflict_edges": [
+        {
+          "with": "prelaunch",
+          "type": "contract",
+          "evidence": "plan-of-record-rung-seven",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M2",
+          "type": "contract",
+          "evidence": "freeze-predicate must not key on label text: preregistration-skeleton.md:316-317 name h-checkpoint-reader-v2/h-source-reader-v3, renamed by M2",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M12",
+          "type": "file",
+          "evidence": "CLAUDE.md: M0 writes charter + freeze paragraph and fixes :224; M12 lifts the freeze paragraph",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M12",
+          "type": "contract",
+          "evidence": "freeze-predicate, replay-recipe, replay-corpus-enumeration",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "PARTIAL. Epoch tag ALREADY DONE: do not re-create it. The H1 ticket (D25) is a Linear write. Hub owner: CLAUDE.md. Umbrella issue FOR-1729 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    },
+    {
+      "id": "M1",
+      "title": "M1 rails before motion",
+      "issues": [
+        "FOR-1730"
+      ],
+      "branch": "refactor/tests/m1-rails-before-motion",
+      "parent": "refactor/platform-topology",
+      "mode": "ratchet",
+      "engine_mode": "direct",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "collected-test-floor",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "stage-table-single-source",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "scope-pattern-self-tests",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "import-rewriter-dry-run",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "string-target-resolution-test",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "export-origin-probe",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "pytest-plugin-in-place",
+          "kind": "contract",
+          "frozen_after": false
+        },
+        {
+          "name": "markers-folder-is-kind",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "d13-equivalence-pins",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "d22-deletions",
+          "kind": "contract",
+          "frozen_after": false
+        }
+      ],
+      "contracts_consumed": [
+        "prelaunch:plan-of-record-rung-seven",
+        "M0:freeze-predicate"
+      ],
+      "touch_set": [
+        "tests/conftest.py",
+        "tests/suite_lock.py",
+        "scripts/suite_stages.py",
+        "scripts/ship_scope.py",
+        "scripts/logger_smoke.py",
+        "scripts/dead_code_report.py",
+        "scripts/rewrite_path_refs.py",
+        "tests/repo/test_suite_tiers.py",
+        "tests/repo/test_suite_stages.py",
+        "tests/repo/test_ship_scope.py",
+        "tests/repo/test_rewrite_path_refs.py",
+        "tests/repo/test_dead_code_report.py",
+        "tests/repo/test_logger_smoke.py",
+        "tests/unit/ladder/run/test_h_codec_handoff.py",
+        "tests/unit/ladder/run/test_h_pair_request.py",
+        "tests/unit/ladder/run/test_h_pair_request_pins.py",
+        "tests/fixtures/segmentation_golden.json",
+        "tests/support/**",
+        "tests/architecture/test_test_import_budget.py",
+        ".pre-commit-config.yaml"
+      ],
+      "conflict_edges": [
+        {
+          "with": "M0",
+          "type": "contract",
+          "evidence": "freeze-predicate is the invariant every lane runs under",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M2",
+          "type": "contract",
+          "evidence": "collected-test-floor, import-rewriter-dry-run",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M3",
+          "type": "file",
+          "evidence": "tests/conftest.py, suite_stages.py:75-82, ship_scope.py:36-48, .pre-commit-config.yaml:148",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M4",
+          "type": "file",
+          "evidence": "tests/conftest.py:10-12 (pytest, torch, loguru) moves to the kernel testing extra",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M5",
+          "type": "file",
+          "evidence": "ship_scope.py:41 sinks.py glob; logger_smoke.py:84-94 SERIES_PATHS",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M6",
+          "type": "file",
+          "evidence": "test_test_import_budget.py:31 EDGE_BUDGET=387 equality (:137); L4e port adds an edge (73dc7968:tests/test_segmentation_golden.py:23)",
+          "resolution": "serial-after"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "NARROWED. Lane 1 (floor, stage table, scope self-tests) runs alone first, then lanes 2-3 fan out. Hub owner: conftest, suite_stages, ship_scope, logger_smoke, tests/support, .pre-commit-config.yaml (asks only). Umbrella issue FOR-1730 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    },
+    {
+      "id": "M2",
+      "title": "M2 identity door",
+      "issues": [
+        "FOR-1731"
+      ],
+      "branch": "refactor/identity/m2-identity-door",
+      "parent": "refactor/platform-topology",
+      "mode": "tracer",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": false
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "reader-identity-door-v1",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "string-import-ban",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "attestation-prefix-table",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "identity-tier",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "non-member-import-review",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "wire-family-catalog-and-define-once-lint",
+          "kind": "contract",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "M1:collected-test-floor",
+        "M1:import-rewriter-dry-run",
+        "M1:string-target-resolution-test",
+        "M0:freeze-predicate",
+        "M0:replay-recipe"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/ladder/run/checkpoint.py",
+        "src/entropic_substrate/ladder/capture/capture.py",
+        "src/entropic_substrate/composition/**",
+        "src/entropic_substrate/kernel/identity/**",
+        "tools/regime_rows.py",
+        "scripts/h_probe_bootstrap.py",
+        "tests/unit/core/observation/test_identity_epoch.py",
+        "tests/unit/ladder/capture/test_regime_rows.py",
+        "docs/identity/read-old-table.md",
+        "docs/h1/preregistration-skeleton.md"
+      ],
+      "conflict_edges": [
+        {
+          "with": "M0",
+          "type": "contract",
+          "evidence": "replay-recipe must exist before the first family rename (plan Risks amended row 2)",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M1",
+          "type": "contract",
+          "evidence": "collected-test-floor, import-rewriter-dry-run",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M3",
+          "type": "file",
+          "evidence": "h_probe_bootstrap.py:21-32: M2 makes one table, M3 changes values",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M7",
+          "type": "file",
+          "evidence": "checkpoint.py: M2 :6, :51, :71, :78-133, :138-139; M7 save :287 and loader",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M12",
+          "type": "file",
+          "evidence": "regime_rows.py:63-75 hard-code the pre-reset labels",
+          "resolution": "hub-owner"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "HOLDS. 54 members at checkpoint.py:78-133; none is __init__. Door per R18, not review:350. Hub owner: checkpoint.py, capture.py, regime_rows.py, h_probe_bootstrap.py. Umbrella issue FOR-1731 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    },
+    {
+      "id": "M3",
+      "title": "M3 workspace skeleton and spec door",
+      "issues": [
+        "FOR-1732"
+      ],
+      "branch": "refactor/workspace/m3-workspace-spec-door",
+      "parent": "refactor/platform-topology",
+      "mode": "tracer",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "configuration-door",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "uv-workspace",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "liftable-root-import-ban",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "shared-namespace-proof",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "repo-paths-two-roots",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "containerfile-copy-attestation-test",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "nested-claude-md-sentinel",
+          "kind": "contract",
+          "frozen_after": false
+        },
+        {
+          "name": "residue-ratchet-and-forwarder-count",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "member-gates-deptry-file-ceiling",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "workspace-test-tier",
+          "kind": "contract",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "M2:reader-identity-door-v1",
+        "M2:attestation-prefix-table",
+        "M1:stage-table-single-source",
+        "M1:scope-pattern-self-tests"
+      ],
+      "touch_set": [
+        "pyproject.toml",
+        "uv.lock",
+        "platform.toml",
+        ".importlinter",
+        "Containerfile",
+        ".claude/hooks/worktree-post-create.sh",
+        ".pre-commit-config.yaml",
+        ".secrets.baseline",
+        "justfile",
+        "src/entropic_substrate/__init__.py",
+        "tests/support/repo_paths.py",
+        "tests/conftest.py",
+        "scripts/h_probe_bootstrap.py",
+        "tests/unit/historical/d_ladder/test_h_probe_bootstrap.py",
+        "scripts/ship_scope.py",
+        "scripts/suite_stages.py",
+        "tests/repo/test_release_please_config.py",
+        "release-please-config.json",
+        "tests/repo/test_packaging_identity.py",
+        "tests/repo/test_repo_paths.py",
+        "tests/repo/test_run_container_test_config.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "M1",
+          "type": "file",
+          "evidence": "conftest, suite_stages, ship_scope, .pre-commit-config.yaml (M1 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M2",
+          "type": "file",
+          "evidence": "h_probe_bootstrap.py:21-32 (M2 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M2",
+          "type": "contract",
+          "evidence": "loader lands at its final kernel path with no member edit (plan:575)",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M4",
+          "type": "contract",
+          "evidence": "configuration-door; M4 must not move the loader",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M10",
+          "type": "file",
+          "evidence": "pyproject.toml, uv.lock; lock regenerated, never hand-merged",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M12",
+          "type": "file",
+          "evidence": "pyproject.toml, uv.lock, .importlinter (header :1-35 DN-P1 rule stale)",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "MF",
+          "type": "file",
+          "evidence": "pyproject.toml:3, __init__.py:12, test_release_please_config.py:89-101",
+          "resolution": "hub-owner"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "PARTIAL. No workspace, platform.toml or strict loader today; D26 measurement not run. live gate provisional (Q7). Hub owner: pyproject, uv.lock, .importlinter, Containerfile, justfile, __init__.py, repo_paths. Umbrella issue FOR-1732 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    },
+    {
+      "id": "M4",
+      "title": "M4 kernel and core members",
+      "issues": [
+        "FOR-1733"
+      ],
+      "branch": "refactor/kernel/m4-kernel-core-members",
+      "parent": "refactor/platform-topology",
+      "mode": "tracer",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "kernel-stdlib-only",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "canonical-schemes-golden-vectors",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "digest-and-commit-types",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "core-membership-r13",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "lifecycle-split",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "kernel-testing-extra",
+          "kind": "contract",
+          "frozen_after": false
+        },
+        {
+          "name": "modelconfig-beside-build-block",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "codec-digest-round-trips",
+          "kind": "contract",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "M3:configuration-door",
+        "M3:uv-workspace",
+        "M3:liftable-root-import-ban",
+        "M2:reader-identity-door-v1",
+        "M1:pytest-plugin-in-place",
+        "M1:import-rewriter-dry-run",
+        "M0:replay-corpus-enumeration"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/kernel/**",
+        "src/entropic_substrate/core/substrate/backbone.py",
+        "src/entropic_substrate/core/substrate/blocks.py",
+        "src/entropic_substrate/core/substrate/field_encoder.py",
+        "src/entropic_substrate/core/latent/state.py",
+        "src/entropic_substrate/core/sentence/profile.py",
+        "src/entropic_substrate/ladder/run/transport/d1_trainer_mailbox_contracts.py",
+        "src/entropic_substrate/ladder/file/d1_filing.py",
+        "src/entropic_substrate/ladder/review/d1_blind_aliases.py",
+        "src/entropic_substrate/ladder/run/checkpoint.py",
+        "scripts/assemble_review_packet.py",
+        "scripts/logger_smoke.py",
+        "scripts/prepare_enwik8_source.py",
+        "scripts/ship_scope.py",
+        "tools/h_solver_preflight.py",
+        "tools/regime_rows.py",
+        "tests/unit/kernel/**",
+        "tests/unit/core/**",
+        "tests/support/helpers.py",
+        "tests/conftest.py",
+        ".importlinter",
+        "tests/architecture/test_module_identity.py",
+        "tests/architecture/test_test_import_budget.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "M1",
+          "type": "file",
+          "evidence": "conftest, logger_smoke.py:133/:166, ship_scope.py:46, test_test_import_budget.py (M1 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M2",
+          "type": "file",
+          "evidence": "checkpoint.py:35 _canonical; re-pin kernel.artifacts, kernel.lifecycle, core.latent.dynamics/metric, core.probe.score_gain; regime_rows.py:42-45",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M3",
+          "type": "file",
+          "evidence": ".importlinter:42-50 names entropic_substrate.kernel (M3 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M3",
+          "type": "contract",
+          "evidence": "configuration-door",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M5",
+          "type": "file",
+          "evidence": "transport/d1_trainer_mailbox_contracts.py:40/:203",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M7",
+          "type": "file",
+          "evidence": "kernel/runtime/checkpoint.py:53; core/probe/predictive_probe.py:211 (M7 owns)",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M9",
+          "type": "file",
+          "evidence": "d1_filing.py:90, d1_blind_aliases.py:47; assemble_review_packet.py:330; test_module_identity.py sentinel key kernel.lifecycle (M9 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M11",
+          "type": "file",
+          "evidence": "core/**, kernel/verdict/**: M4 cuts deps only, M11 moves",
+          "resolution": "hub-owner"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "NARROWED. Conductor-forced arch (Q32). Hub owner: kernel/**, tests/support/helpers.py, tests/unit/kernel/**. Umbrella issue FOR-1733 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    },
+    {
+      "id": "M5",
+      "title": "M5 platform planes and the shared pod kernel",
+      "issues": [
+        "FOR-1734"
+      ],
+      "branch": "refactor/platform/m5-planes-pod-kernel",
+      "parent": "refactor/platform-topology",
+      "mode": "ratchet",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "storage-plane-ports",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "infra-plane-ports",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "observability-plane-metricsink",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "series-free-pod-kernel",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "d1-shared-leaves",
+          "kind": "contract",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "M4:canonical-schemes-golden-vectors",
+        "M4:digest-and-commit-types",
+        "M3:uv-workspace",
+        "M2:reader-identity-door-v1",
+        "M1:scope-pattern-self-tests"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/ladder/capture/ports/**",
+        "src/entropic_substrate/ladder/capture/reader/**",
+        "src/entropic_substrate/ladder/capture/adapters/**",
+        "src/entropic_substrate/ladder/capture/custody/**",
+        "src/entropic_substrate/ladder/run/transport/**",
+        "src/entropic_substrate/ladder/run/provider/d1_system_runtime_probe.py",
+        "src/entropic_substrate/ladder/run/worker/d1_predecessor_loader.py",
+        "src/entropic_substrate/ladder/run/worker/hardware.py",
+        "src/entropic_substrate/ladder/gate/ladder_predecessor.py",
+        "src/entropic_substrate/historical/d_ladder/d_ladder_worker_runtime.py",
+        "scripts/ship_scope.py",
+        "scripts/logger_smoke.py",
+        "scripts/entrypoints.env",
+        "tests/repo/test_ship_scope.py",
+        "tests/unit/ladder/capture/**",
+        "tests/live/**",
+        ".importlinter",
+        "tests/architecture/test_module_identity.py",
+        "tests/architecture/test_test_import_budget.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "M1",
+          "type": "file",
+          "evidence": "ship_scope.py:41/:46-48, logger_smoke.py:84-94, test_ship_scope.py:36, test_test_import_budget.py (M1 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M3",
+          "type": "file",
+          "evidence": "ship_scope.py globs re-anchored at M3; .importlinter (M3 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M4",
+          "type": "file",
+          "evidence": "transport/d1_trainer_mailbox_contracts.py (M4 owns the helpers)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M2",
+          "type": "contract",
+          "evidence": "re-pin six pod members + capture importers [R review:386]",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M6",
+          "type": "file",
+          "evidence": "capture/ports/** (metric_sink.py:40), reader/telemetry.py:457-472",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M8",
+          "type": "file",
+          "evidence": "transport/d1_trainer_object_transport.py",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M9",
+          "type": "file",
+          "evidence": "worker/d1_predecessor_loader.py, gate/ladder_predecessor.py, 5 transport files importing ladder.register; test_module_identity.py sentinel keys",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M12",
+          "type": "file",
+          "evidence": "capture/adapters/** gains Trackio; entrypoints.env:2",
+          "resolution": "hub-owner"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "NARROWED. Floor-forced arch (capture/ports/). Three lanes infra, storage, observability. Hub owner: capture/ports|reader|adapters|custody/**, run/transport/**. Umbrella issue FOR-1734 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    },
+    {
+      "id": "M6",
+      "title": "M6 ports, registry and the testing kit",
+      "issues": [
+        "FOR-1735"
+      ],
+      "branch": "refactor/platform/m6-ports-registry-kit",
+      "parent": "refactor/platform-topology",
+      "mode": "tracer",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "run-start-record-door-v1",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "platform-api-version-door",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "protocol-disposition-register",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "platform-ports-front-door",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "registry-typed-specs",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "platform-testing-kit",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "spine-adaptermethod-shapes",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "modelfactory-shape",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "source-port-and-rl-placeholder",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "typing-lane",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "test-edge-path-ban",
+          "kind": "contract",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "M5:storage-plane-ports",
+        "M5:infra-plane-ports",
+        "M5:observability-plane-metricsink",
+        "M4:digest-and-commit-types",
+        "M3:configuration-door",
+        "M2:reader-identity-door-v1"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/composition/wiring/**",
+        "src/entropic_substrate/ladder/capture/reader/telemetry.py",
+        "src/entropic_substrate/ladder/capture/records/d1_journal_values.py",
+        "src/entropic_substrate/ladder/capture/ports/**",
+        "src/entropic_substrate/ladder/run/transport/d1_trainer_mailbox_worker.py",
+        "src/entropic_substrate/ladder/review/d1_analysis_api.py",
+        "src/entropic_substrate/ladder/review/d1_execution_receipt.py",
+        "scripts/assemble_review_packet.py",
+        "tests/typing/**",
+        "tests/architecture/test_test_import_budget.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "M5",
+          "type": "file",
+          "evidence": "capture/ports/**, reader/telemetry.py, transport/d1_trainer_mailbox_worker.py (M5 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M5",
+          "type": "contract",
+          "evidence": "storage, infra, observability ports",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M2",
+          "type": "file",
+          "evidence": "composition/** (M2 adds root composition; M6 adds registry under wiring/**)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M4",
+          "type": "file",
+          "evidence": "assemble_review_packet.py :330 first (M9 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M1",
+          "type": "file",
+          "evidence": "test_test_import_budget.py:31-32 becomes a path-keyed ban",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M7",
+          "type": "file",
+          "evidence": "composition/wiring/** registry vs trainer wiring",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M9",
+          "type": "file",
+          "evidence": "assemble_review_packet.py:388-430 whole-record run_start parity needs a scrub entry; review/d1_execution_receipt.py and review/d1_analysis_api.py (M9 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M11",
+          "type": "file",
+          "evidence": "composition/wiring/** D1 wiring to series-d (review:251)",
+          "resolution": "hub-owner"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "PARTIAL. 97 Protocols confirmed; registry not probed (needs-recon). D24 open. Hub owner: composition/wiring/**, test_test_import_budget.py, tests/typing/**. Umbrella issue FOR-1735 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    },
+    {
+      "id": "M7",
+      "title": "M7 one custody, one engine",
+      "issues": [
+        "FOR-1736"
+      ],
+      "branch": "refactor/engine/m7-custody-engine",
+      "parent": "refactor/platform-topology",
+      "mode": "tracer",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "checkpoint-custody-door-v1",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "engine-run-function",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "journal-cadence-d17",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "e-field-pretrain-adapter",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "train-cli-mapping",
+          "kind": "contract",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "M6:modelfactory-shape",
+        "M6:source-port-and-rl-placeholder",
+        "M6:registry-typed-specs",
+        "M6:run-start-record-door-v1",
+        "M5:storage-plane-ports",
+        "M4:canonical-schemes-golden-vectors",
+        "M2:reader-identity-door-v1"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/historical/e_series/train.py",
+        "src/entropic_substrate/historical/e_series/field_pretrain.py",
+        "src/entropic_substrate/historical/d_ladder/d_ladder_training.py",
+        "src/entropic_substrate/historical/d_ladder/d_ladder_execution.py",
+        "src/entropic_substrate/historical/d_ladder/ladder_probe.py",
+        "src/entropic_substrate/ladder/run/trainer/**",
+        "src/entropic_substrate/ladder/run/runner.py",
+        "src/entropic_substrate/ladder/run/execution.py",
+        "src/entropic_substrate/ladder/run/checkpoint.py",
+        "src/entropic_substrate/ladder/run/seals.py",
+        "src/entropic_substrate/ladder/run/journal.py",
+        "src/entropic_substrate/ladder/run/training.py",
+        "src/entropic_substrate/ladder/run/span_probe.py",
+        "src/entropic_substrate/ladder/run/span_probe_artifacts.py",
+        "src/entropic_substrate/ladder/run/generation.py",
+        "src/entropic_substrate/core/probe/predictive_probe.py",
+        "src/entropic_substrate/kernel/runtime/checkpoint.py",
+        "src/entropic_substrate/composition/wiring/**",
+        "src/entropic_substrate/composition/entrypoints/cli.py",
+        "docs/deploy-h100.md"
+      ],
+      "conflict_edges": [
+        {
+          "with": "M2",
+          "type": "file",
+          "evidence": "checkpoint.py save :287, loader, literals :274/:315/:320 (M2 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M4",
+          "type": "file",
+          "evidence": "kernel/runtime/checkpoint.py:53 (M4 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M6",
+          "type": "file",
+          "evidence": "composition/wiring/** (M6 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M6",
+          "type": "contract",
+          "evidence": "modelfactory-shape, source port, registry, run-start door",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M8",
+          "type": "file",
+          "evidence": "checkpoint.py re-pin; operator-controller wiring overlap unmeasured",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M9",
+          "type": "file",
+          "evidence": "12 of 18 run/trainer files import ladder.register [measured]",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M10",
+          "type": "contract",
+          "evidence": "checkpoint-custody-door-v1 adapter-delta slot; engine",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M11",
+          "type": "file",
+          "evidence": "historical/e_series/** in the E lane",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M12",
+          "type": "file",
+          "evidence": "historical/** deletion gated on e-field-pretrain-adapter parity",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "PARTIAL. Door per R18 (-v1), not review:407. D17 confirmed at this gate. Hub owner: run/trainer/**, historical/e_series/**, predictive_probe.py, docs/deploy-h100.md:318-329. Umbrella issue FOR-1736 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    },
+    {
+      "id": "M8",
+      "title": "M8 one pod machinery",
+      "issues": [
+        "FOR-1737"
+      ],
+      "branch": "refactor/pod/m8-pod-machinery",
+      "parent": "refactor/platform-topology",
+      "mode": "tracer",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "launch-door-v1",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "pod-lifecycle-exhausted-pending",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "two-guards-per-pod",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "courier-fix-d19",
+          "kind": "contract",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "M7:engine-run-function",
+        "M6:platform-testing-kit",
+        "M5:storage-plane-ports",
+        "M5:observability-plane-metricsink",
+        "M5:series-free-pod-kernel",
+        "M2:reader-identity-door-v1"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/ladder/run/provider/provider_launch.py",
+        "src/entropic_substrate/ladder/run/provider/d1_runpod_adapter.py",
+        "src/entropic_substrate/ladder/run/values/d1_operator_ports.py",
+        "src/entropic_substrate/ladder/run/h_probe_launch.py",
+        "src/entropic_substrate/ladder/run/h_probe_watchdog.py",
+        "src/entropic_substrate/ladder/run/h_probe_controller.py",
+        "src/entropic_substrate/ladder/run/worker/h_probe_controller.py",
+        "src/entropic_substrate/ladder/run/worker/h_probe_allocation.py",
+        "src/entropic_substrate/ladder/run/worker/h_probe_log_events.py",
+        "src/entropic_substrate/ladder/run/worker/h_probe_host_log.py",
+        "src/entropic_substrate/ladder/run/campaign/d1_operator_controller.py",
+        "src/entropic_substrate/ladder/run/campaign/d1_operator_values.py",
+        "src/entropic_substrate/ladder/run/closure/d1_billing_finalizer.py",
+        "src/entropic_substrate/ladder/run/closure/d1_runpod_billing_parser.py",
+        "src/entropic_substrate/ladder/run/transport/d1_trainer_object_transport.py",
+        "src/entropic_substrate/ladder/run/h_probe_events.py",
+        "src/entropic_substrate/ladder/run/h_probe_collection.py",
+        "src/entropic_substrate/ladder/run/h_probe_control.py",
+        "src/entropic_substrate/ladder/run/h_probe_resume.py",
+        "src/entropic_substrate/ladder/run/h_probe_process.py",
+        "src/entropic_substrate/ladder/run/worker_execution.py",
+        "src/entropic_substrate/ladder/run/worker_request.py",
+        "src/entropic_substrate/ladder/run/checkpoint.py",
+        "justfile",
+        "scripts/logger_smoke.py",
+        "scripts/ship_scope.py",
+        "scripts/entrypoints.env",
+        "docs/deploy-h100.md",
+        "tests/architecture/test_module_identity.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "M5",
+          "type": "file",
+          "evidence": "transport/d1_trainer_object_transport.py (M5 owns); worker_execution.py:41/:99",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M6",
+          "type": "contract",
+          "evidence": "platform-testing-kit fake Provider; none in src, private doubles in 5 test files",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M7",
+          "type": "file",
+          "evidence": "checkpoint.py re-pin (M2 owns); docs/deploy-h100.md (M7 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M2",
+          "type": "file",
+          "evidence": "checkpoint.py _READER_MODULES pod-side re-pin (M2 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M4",
+          "type": "file",
+          "evidence": "checkpoint.py, logger_smoke.py, ship_scope.py edited by M4 first",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M1",
+          "type": "file",
+          "evidence": "logger_smoke.py:84-86, ship_scope.py:46-48 (M1 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M3",
+          "type": "file",
+          "evidence": "justfile:76 h_probe_stop module path (M3 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M9",
+          "type": "file",
+          "evidence": "campaign/d1_operator_controller.py (3 register imports), d1_operator_values.py (2), worker_execution.py, worker_request.py; test_module_identity.py sentinel keys",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M11",
+          "type": "file",
+          "evidence": "provider_launch.py:36-37 allowlist; h_probe_*, worker_*",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M12",
+          "type": "file",
+          "evidence": "entrypoints.env:3-4 (M12 owns)",
+          "resolution": "serial-after"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "NARROWED. Door per R18 (-v1), not review:418. D18 confirmed at this gate. Hub owner: run/provider/**, campaign/d1_operator_*, worker_execution.py, worker_request.py. Umbrella issue FOR-1737 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    },
+    {
+      "id": "M9",
+      "title": "M9 evidence protocol split",
+      "issues": [
+        "FOR-1738"
+      ],
+      "branch": "refactor/evidence/m9-protocol-split",
+      "parent": "refactor/platform-topology",
+      "mode": "tracer",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": false
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "d-reader-identity-and-capture-manifest-door-v1",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "protocol-layers-dag",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "factory-only-filed-evidence",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "arm-set-generic-protocol",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "review-engine-home",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "d2-d5-retirement",
+          "kind": "contract",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "M8:launch-door-v1",
+        "M7:checkpoint-custody-door-v1",
+        "M6:registry-typed-specs",
+        "M6:platform-testing-kit",
+        "M4:lifecycle-split",
+        "M0:replay-corpus-enumeration",
+        "M2:reader-identity-door-v1"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/ladder/register/**",
+        "src/entropic_substrate/ladder/analyze/**",
+        "src/entropic_substrate/ladder/review/**",
+        "src/entropic_substrate/ladder/file/**",
+        "src/entropic_substrate/ladder/gate/**",
+        "src/entropic_substrate/ladder/run/campaign/d1_operator_evidence.py",
+        "src/entropic_substrate/ladder/capture/custody/d1_capture_artifacts.py",
+        "src/entropic_substrate/ladder/capture/custody/d1_capture_declaration_codec.py",
+        "src/entropic_substrate/ladder/run/provider/provider_launch.py",
+        "scripts/entrypoints.env",
+        "scripts/blind_review_cloud.py",
+        "scripts/exit_gate.py",
+        "scripts/review_packet_rungs.py",
+        "scripts/assemble_review_packet.py",
+        "scripts/run_exit_gate.py",
+        "tests/architecture/test_module_identity.py",
+        "tests/unit/ladder/run/provider/test_provider_launch_request.py",
+        "tests/unit/composition/entrypoints/test_cli_surface.py",
+        "tests/unit/historical/d_ladder/test_d_ladder_remote.py",
+        "tests/unit/historical/d_ladder/test_d_ladder_worker_command.py",
+        "tests/support/observability_conformance_config.py",
+        "tests/repo/test_observability_conformance.py",
+        ".importlinter"
+      ],
+      "conflict_edges": [
+        {
+          "with": "M5",
+          "type": "file",
+          "evidence": "d1_predecessor_loader.py, ladder_predecessor.py, 5 transport files (M5 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M6",
+          "type": "file",
+          "evidence": "assemble_review_packet.py scrub; review/d1_execution_receipt.py and review/d1_analysis_api.py",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M7",
+          "type": "file",
+          "evidence": "12 run/trainer files import ladder.register (M7 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M8",
+          "type": "file",
+          "evidence": "d1_operator_controller.py, d1_operator_values.py, worker_*; provider_launch.py:36-37 (M8 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M8",
+          "type": "contract",
+          "evidence": "launch-door-v1: D1 onto H's one-way request (D18)",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M4",
+          "type": "file",
+          "evidence": "d1_filing.py:90, d1_blind_aliases.py:47, assemble_review_packet.py:330",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M3",
+          "type": "file",
+          "evidence": ".importlinter (M3 owns): protocol layers contract",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M1",
+          "type": "file",
+          "evidence": "tests/support/** (M1 owns the fixture move)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M11",
+          "type": "file",
+          "evidence": "D-lane d1_* wiring (overlap unmeasured)",
+          "resolution": "hub-owner"
+        },
+        {
+          "with": "M12",
+          "type": "file",
+          "evidence": "entrypoints.env:5 literal retired here; M12 deletes the file",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "HOLDS; serial after M8, not beside M7-M8. The d_ladder literal has eight sites (measured). Hub owner: register|analyze|review|file|gate/**, test_module_identity.py, review-engine scripts. Umbrella issue FOR-1738 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    },
+    {
+      "id": "M10",
+      "title": "M10 fine-tuning cell and foreign fixture",
+      "issues": [
+        "FOR-1739"
+      ],
+      "branch": "refactor/tuning/m10-finetune-cell",
+      "parent": "refactor/platform-topology",
+      "mode": "tracer",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "tuning-cell-methods",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "foreign-fixture-r21",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "spine-ci-job",
+          "kind": "contract",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "M7:checkpoint-custody-door-v1",
+        "M7:engine-run-function",
+        "M6:spine-adaptermethod-shapes",
+        "M6:modelfactory-shape",
+        "M3:uv-workspace"
+      ],
+      "touch_set": [
+        "pyproject.toml",
+        "uv.lock",
+        ".github/workflows/spine-ci.yaml",
+        "tests/unit/platform/tuning/**",
+        "tests/typing/**"
+      ],
+      "conflict_edges": [
+        {
+          "with": "M3",
+          "type": "file",
+          "evidence": "pyproject.toml, uv.lock (M3 owns; exclude-newer :108, torch==2.13.0 :11)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M6",
+          "type": "file",
+          "evidence": "tests/typing/** (M6 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M6",
+          "type": "contract",
+          "evidence": "spine-adaptermethod-shapes, modelfactory-shape",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M7",
+          "type": "contract",
+          "evidence": "checkpoint-custody-door-v1 adapter-delta slot, engine",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M9",
+          "type": "file",
+          "evidence": "no shared file measured; serialized for the host (just stack clipboard race [memory])",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M11",
+          "type": "file",
+          "evidence": "uv.lock: M10 merges before M11 opens",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "PARTIAL. The tuning cell path exists only after M3. Conductor-forced arch (Q32). Umbrella issue FOR-1739 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    },
+    {
+      "id": "M11",
+      "title": "M11 series members",
+      "issues": [
+        "FOR-1740"
+      ],
+      "branch": "refactor/series/m11-series-members",
+      "parent": "refactor/platform-topology",
+      "mode": "ratchet",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "h-member-identity-keys-door",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "series-members",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "data-marker",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "member-copy-test",
+          "kind": "contract",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "M10:tuning-cell-methods",
+        "M9:protocol-layers-dag",
+        "M9:d-reader-identity-and-capture-manifest-door-v1",
+        "M8:pod-lifecycle-exhausted-pending",
+        "M7:e-field-pretrain-adapter",
+        "M6:registry-typed-specs",
+        "M4:core-membership-r13",
+        "M3:shared-namespace-proof",
+        "M3:member-gates-deptry-file-ceiling",
+        "M2:reader-identity-door-v1"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/historical/e_series/**",
+        "src/entropic_substrate/core/substrate/**",
+        "src/entropic_substrate/core/geometry/**",
+        "src/entropic_substrate/core/latent/**",
+        "src/entropic_substrate/core/sentence/**",
+        "src/entropic_substrate/kernel/verdict/**",
+        "src/entropic_substrate/ladder/run/h_probe_launch.py",
+        "src/entropic_substrate/ladder/run/worker_execution.py",
+        "src/entropic_substrate/ladder/run/provider/provider_launch.py",
+        "scripts/h0_final_probe_checks.py",
+        "scripts/prepare_enwik8_source.py",
+        "scripts/e0_bytes_seen_plot.py",
+        "scripts/e1_gap_pareto_plot.py",
+        "tools/h_solver_preflight.py",
+        "tools/h_solver_trace.py",
+        "tools/regime_rows.py",
+        "scripts/entrypoints.env",
+        "scripts/logger_smoke.py",
+        "scripts/ship_scope.py",
+        "uv.lock",
+        ".importlinter",
+        "tests/architecture/test_module_identity.py",
+        "tests/integration/test_h1_observations.py",
+        "tests/integration/test_h_aggregate.py",
+        "tests/integration/test_h_elm_projection.py",
+        "tests/integration/test_h_final_probe_checks_hepp7g.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "M4",
+          "type": "file",
+          "evidence": "core/**, kernel/verdict/** (M4 owns kernel/**)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M4",
+          "type": "contract",
+          "evidence": "H->D 10 import lines across 9 core/sentence files hit core/latent/metric|dynamics; D->E core/latent/state.py:19 -> blocks.build_block",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M7",
+          "type": "file",
+          "evidence": "historical/e_series/** (M7 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M8",
+          "type": "file",
+          "evidence": "provider_launch.py:36-37, h_probe_*, worker_execution.py (M8 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M9",
+          "type": "file",
+          "evidence": "D-lane d1_* wiring; test_module_identity.py (M9 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M10",
+          "type": "file",
+          "evidence": "uv.lock",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M3",
+          "type": "file",
+          "evidence": "uv.lock, .importlinter (M3 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M1",
+          "type": "file",
+          "evidence": "logger_smoke.py, ship_scope.py (M1 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M2",
+          "type": "file",
+          "evidence": "regime_rows.py:42-45 imports core.sentence.records (M2 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M5",
+          "type": "file",
+          "evidence": "ship_scope.py, logger_smoke.py, entrypoints.env edited by M5 first",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M12",
+          "type": "file",
+          "evidence": "entrypoints.env:1/:3 (M12 owns); residue to zero",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "PARTIAL. core.sentence members = 19, not 21 (measured). Schema-forced arch conflicts with the plan's fanout (Q21). Hub owner: core/sentence|latent|substrate|geometry/**, the four DVC-backed integration files. Umbrella issue FOR-1740 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    },
+    {
+      "id": "M12",
+      "title": "M12 composition root, teeth, lift, close",
+      "issues": [
+        "FOR-1741"
+      ],
+      "branch": "refactor/close/m12-root-teeth-lift",
+      "parent": "refactor/platform-topology",
+      "mode": "tracer",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "image-regime-door",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "closing-identity-pin",
+          "kind": "door",
+          "frozen_after": true
+        },
+        {
+          "name": "composition-root-cli",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "lift-recipe",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "member-claude-md",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "trackio-adapter",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "import-contracts-mutation-proven",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "plan-vs-actual-audit",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "freeze-lift-ruling",
+          "kind": "contract",
+          "frozen_after": true
+        },
+        {
+          "name": "thread-intact-comparison-r25",
+          "kind": "contract",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "M0:freeze-predicate",
+        "M0:replay-recipe",
+        "M0:replay-corpus-enumeration",
+        "M0:platform-member-charter-draft",
+        "M11:series-members",
+        "M8:courier-fix-d19",
+        "M7:e-field-pretrain-adapter",
+        "M5:observability-plane-metricsink",
+        "M3:uv-workspace",
+        "M3:residue-ratchet-and-forwarder-count",
+        "M2:wire-family-catalog-and-define-once-lint",
+        "M2:reader-identity-door-v1"
+      ],
+      "touch_set": [
+        "src/entropic_substrate/historical/**",
+        "src/entropic_substrate/composition/**",
+        "scripts/entrypoints.env",
+        "scripts/run_ladder.sh",
+        "justfile",
+        ".importlinter",
+        "tools/mapping.json",
+        "tools/regime_rows.py",
+        "CLAUDE.md",
+        "docs/architecture.md",
+        "docs/platform/lift.md",
+        "pyproject.toml",
+        "uv.lock",
+        "src/entropic_substrate/ladder/capture/adapters/**",
+        "tests/unit/composition/entrypoints/test_cli_surface.py",
+        "tests/architecture/test_no_old_prefix.py",
+        "tests/unit/historical/d_ladder/test_h_probe_bootstrap.py"
+      ],
+      "conflict_edges": [
+        {
+          "with": "M0",
+          "type": "file",
+          "evidence": "CLAUDE.md freeze paragraph (M0 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M0",
+          "type": "contract",
+          "evidence": "freeze-predicate, replay-recipe, replay-corpus-enumeration",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M3",
+          "type": "file",
+          "evidence": "pyproject.toml, uv.lock, .importlinter :42-50/:85-88, justfile :6/:15/:17-19 (M3 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M2",
+          "type": "file",
+          "evidence": "regime_rows.py:66/:75 (M2 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M4",
+          "type": "file",
+          "evidence": "regime_rows.py:42-45 rewritten by M4 first",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M5",
+          "type": "file",
+          "evidence": "capture/adapters/** (M5 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M6",
+          "type": "file",
+          "evidence": "composition/wiring/** (M6 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M7",
+          "type": "contract",
+          "evidence": "historical/ deletion gated on e-field-pretrain-adapter parity (D25)",
+          "resolution": "rails-before"
+        },
+        {
+          "with": "M9",
+          "type": "file",
+          "evidence": "entrypoints.env:5 retired by M9 first",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M10",
+          "type": "file",
+          "evidence": "pyproject.toml, uv.lock",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M11",
+          "type": "file",
+          "evidence": "entrypoints.env:1/:3; residue holds composition only",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "MF",
+          "type": "contract",
+          "evidence": "closing-identity-pin precedes the version commit",
+          "resolution": "rails-before"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "NARROWED; composition/ -> entropic-cli move is needs-recon (Q36). Spend and image steps return to live. Hub owner: entrypoints.env, run_ladder.sh, mapping.json, docs/architecture.md, historical/**. Umbrella issue FOR-1741 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    },
+    {
+      "id": "MF",
+      "title": "MF per-member versions (one appended commit after the closing pin)",
+      "issues": [
+        "FOR-1742"
+      ],
+      "branch": "refactor/release/mf-per-member-versions",
+      "parent": "refactor/platform-topology",
+      "mode": "ratchet",
+      "engine_mode": "arch",
+      "gates": {
+        "liveRequired": true
+      },
+      "cost_class": "build",
+      "contracts_owned": [
+        {
+          "name": "release-lanes-door",
+          "kind": "door",
+          "frozen_after": true
+        }
+      ],
+      "contracts_consumed": [
+        "M12:closing-identity-pin",
+        "M11:series-members",
+        "M3:uv-workspace"
+      ],
+      "touch_set": [
+        ".release-please-manifest.json",
+        "release-please-config.json",
+        "pyproject.toml",
+        "uv.lock",
+        "src/entropic_substrate/__init__.py",
+        "tests/repo/test_release_please_config.py",
+        ".github/workflows/release-please.yml"
+      ],
+      "conflict_edges": [
+        {
+          "with": "M3",
+          "type": "file",
+          "evidence": "pyproject.toml:3, __init__.py:12, release-please-config.json, test_release_please_config.py:89-101 (M3 owns)",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M10",
+          "type": "file",
+          "evidence": "pyproject.toml, uv.lock",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M11",
+          "type": "file",
+          "evidence": "uv.lock and per-member pyproject.toml",
+          "resolution": "serial-after"
+        },
+        {
+          "with": "M12",
+          "type": "contract",
+          "evidence": "closing-identity-pin",
+          "resolution": "serial-after"
+        }
+      ],
+      "parallel_group": null,
+      "status": "queued",
+      "notes": "HOLDS. The root __init__ is not a reader member, so there is no re-pin. Replace the release teeth, never delete them. Schema-forced arch (Q21). Hub owner: release-please files. Umbrella issue FOR-1742 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+    }
+  ],
+  "registry": ".claude/workflows/td-phase-lifecycle.registry.json"
 }
