@@ -158,6 +158,22 @@ fixture's canonical output at the epoch tag first, before it moves the owning co
 M0 did not read the E pointers or the image bundles. Steps 1 to 4 apply to them unchanged; the
 read command in step 5 is the one their own verdict or deploy document names.
 
+### Every tracked pointer is retained
+
+Three more pointers are tracked outside `results/`:
+
+| pointer | content |
+| --- | --- |
+| `models/captured.dvc` | 18 files, 6,163,051,386 bytes |
+| `models/field-pphi-v1.pt.dvc` | one file, 2,502,592 bytes |
+| `data/enwik8.dvc` | 2 files, 100,000,073 bytes |
+
+That makes 23 tracked `.dvc` pointers at the epoch tag: 20 under `results/`, 2 under `models/`
+and 1 under `data/`. This file says which of them form the replay corpus. It names none of them
+as unneeded. An object that no pointer at the current tip names may still be named by a pointer
+at an older commit, and replaying that commit needs it. A storage audit therefore starts from
+the pointers of every commit that holds evidence, never from this list alone.
+
 ## Reference run
 
 The procedure above was executed once, on 2026-11-28 UTC, in a detached worktree of the tag on a
