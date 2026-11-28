@@ -174,8 +174,8 @@
         }
       ],
       "parallel_group": null,
-      "status": "active",
-      "notes": "PARTIAL. Epoch tag ALREADY DONE: do not re-create it. The H1 ticket (D25) is a Linear write. Hub owner: CLAUDE.md. Umbrella issue FOR-1729 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts."
+      "status": "done",
+      "notes": "PARTIAL. Epoch tag ALREADY DONE: do not re-create it. The H1 ticket (D25) is a Linear write. Hub owner: CLAUDE.md. Umbrella issue FOR-1729 in Linear project P-FOR-45; lane issues are filed under the horizon milestone when it starts. EXIT 2026-11-28: lane issues FOR-1746 to FOR-1751; H1 detail-preservation ticket FOR-1752; rulings D27 and D28 recorded. NOT DONE: the conflict edge with M12 says M0 fixes CLAUDE.md:224, and no tracked file says what the defect on that line is; asked of the operator, open, no change made to that line."
     },
     {
       "id": "M1",
