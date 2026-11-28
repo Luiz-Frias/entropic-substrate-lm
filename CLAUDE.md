@@ -37,6 +37,9 @@ not relabelled as an implemented or scientifically validated chunk-level generat
 
 ## Horizon
 
+**Frozen 2026-11-27.** H1 and every later stage wait until the platform refactor closes (ruling
+R12). The freeze, what enforces it and how it lifts are in "Platform refactor initiative" below.
+
 The programme is complete only when a model within the declared deployment envelope has
 reproducible generation and held-out evaluation, and each retained mechanism has its own
 controlled evidence. The approved H0–H5 itinerary is run in sequence; a stage is sufficient
@@ -91,6 +94,84 @@ Do not infer new-stage eligibility from old E/D results or local test fixtures. 
 registered collapse as valid negative evidence and unexpected invariants as execution defects.
 The `Auditable compute-to-quality telemetry` dependency is reused, not duplicated. Quantum
 hardware, topology capstones, and unregistered modality expansion are not implied by this goal.
+
+## Platform refactor initiative (2026-11-27)
+
+The operator ruled on 2026-11-27 that the platform refactor runs before H1 resumes (ruling R12).
+This section is that initiative's own north star and horizon. The repo north star and horizon
+above are unchanged and still govern the science; this initiative changes how the code is
+packaged, never what is claimed. The plan of record is
+`docs/plans/series-plugin-topology.plan.md`, section "Rung seven", and where this section and
+that one disagree the plan governs. Nothing here authorizes a pod, spend, a tag, a merge or a
+push to `main`.
+
+### North star
+
+Turn the monolith `src/entropic_substrate` into a uv workspace in which the training machinery
+is a liftable platform and each experiment series is a plugin.
+
+- **One of each.** One training engine, one checkpoint custody, one pod machinery, one capture
+  path, one observability plane and one evidence protocol, each owned once by the platform. A
+  series supplies scientific adapters and nothing else: no step loop, no checkpoint I/O, no pod
+  code (R4).
+- **A library for training machinery, not for this repo's series** (R6). The platform owns what
+  sits around the optimizer step: admission, launch, custody, telemetry, capture and evidence.
+  Its ports are named by what a training harness needs, never by E, D or H.
+- **Two liftable roots.** `entropic_kernel` imports the standard library only.
+  `entropic_platform` depends on no other workspace member than the kernel. Neither ever imports
+  `entropic_substrate`; that ban is the lift boundary (R14). Core is the series-neutral science
+  kit, and the platform never imports it (R13).
+- **Series are plugins.** E, D and H implement platform ports and own none. They bind through
+  one explicit registry in the composition root, the only place a string import is legal (R2).
+- **Evidence does not migrate.** Wire families reset to new names at `-v1` with no read-old
+  adapter. Evidence sealed before the refactor replays at the tag `epoch-pre-platform-refactor`
+  by the recipe in `docs/identity/replay-recipe.md` (R18).
+
+### Horizon
+
+Done enough when every horizon M0 to M12 in the plan's "Horizons" table has exited and the final
+step MF is appended. Each horizon's own exit and oracle are that table's rows; no horizon borrows
+an exit from another. The initiative as a whole is sufficient when all of these hold at the
+closing tip:
+
+- all three series run through the platform ports, each with its tiny fixture equal through the
+  admissible reader (R15);
+- one foreign fixture, a LoRA fine-tune of `chronos-bolt-tiny`, runs through the one engine under
+  the R21 rubric and the R20 hardware gates;
+- the residue and forwarder counts are zero, every import contract goes red under a one-line
+  mutation, each member's gate is green from a bare directory, and the lift recipe passes the
+  copy test;
+- the closing identity pin is made and the thread-intact pod comparison of R25 has run, under a
+  fresh operator GO with the balance said aloud;
+- the plan-versus-actual audit is filed and the freeze is lifted by a filed operator ruling.
+
+The horizon binds: reaching it and continuing because the work is interesting is a violation.
+The reach items of R16 are inside it; the X-LoRA spike ends on the kill rule of R22 and never
+extends a horizon. Extracting the platform into its own repository, and its real library name,
+belong to a later initiative. Findings that do not block drain to the second-pass bucket and are
+worked after M12 (R23).
+
+### Freeze
+
+While the refactor's sprint manifest is open, the freeze of R12 and R25 is in force:
+
+- no H1 registration is sealed;
+- no H capture is admitted;
+- no image is re-pinned;
+- no H pod of any kind is created, the DH-34 quote pods included (D14).
+
+Why: the reader identity hashes its member files by name and bytes, and every horizon that
+touches a member re-pins it. Evidence sealed under an intermediate identity could not be read at
+the next horizon's tip.
+
+`tests/repo/test_freeze_predicate.py` enforces the two rows it can observe in the tree. It goes
+red when an `h1-*.dvc` pointer appears under `results/`, when an identity row of
+`docs/h1/preregistration-skeleton.md` is filled, or when that skeleton loses its "NOT SEALED"
+banner. An image re-pin and a pod are not visible to a test, so they bind through this paragraph:
+stop and ask. The one planned exception is the R25 comparison pod at M12, which needs its own GO.
+
+The freeze lifts only by a filed operator ruling at M12, after the closing identity pin. H1 then
+resumes from the closing tip in the order given in `docs/h1/shelved-state-2026-11-27.md`.
 
 ## Commands
 
