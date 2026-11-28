@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.4](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.12.3...v0.12.4) (2026-11-28)
+
+
+### Documentation
+
+* **hooks:** FOR-1724 retract the "plugin already runs uv sync" claim ([787e862](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/787e862e005bfe40df9abfc4a8f2022fb09c2b61))
+* **hooks:** FOR-1724 retract the "plugin already runs uv sync" claim ([#444](https://github.com/Luiz-Frias/entropic-substrate-lm/issues/444)) ([d91d095](https://github.com/Luiz-Frias/entropic-substrate-lm/commit/d91d0955dcd9ae40287a5fbb72b617fee4a8e53f))
+
 ## [0.12.3](https://github.com/Luiz-Frias/entropic-substrate-lm/compare/v0.12.2...v0.12.3) (2026-11-22)
 
 
